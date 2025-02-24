@@ -1,10 +1,9 @@
-[![Build and Test](https://github.com/drew2a/ai-review/actions/workflows/ci.yml/badge.svg)](https://github.com/drew2a/ai-review/actions/workflows/ci.yml)
+[![Build and Test](https://github.com/drew2a/ai-review/actions/workflows/ci.yml/badge.svg)](https://github.com/drew2a/ai-review/actions/workflows/ci.yml) [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
 # AI Code Review Action
 
 A GitHub Action that provides automated code review using AI to analyze pull request changes.
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
 ## Features
 
@@ -25,13 +24,13 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 
 | Name                    | Description                                               | Required | Default              |
 |-------------------------|-----------------------------------------------------------|----------|----------------------|
-| `api_endpoint`          | LLM API endpoint                                          | ✅        | -                    |
-| `api_key`               | LLM API key                                               | ✅        | -                    |
-| `api_version`           | LLM API version                                           | ❌        | `2023-12-01-preview` |
-| `llm_model`             | LLM Model used for review                                 | ❌        | `gpt-4o`             |
-| `debug`                 | Enable debug mode (true/false)                            | ❌        | `false`              |
-| `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | ❌        | `false`              |
-| `github_token`          | GitHub token for authentication                           | ✅        | -                    |
+| `api_endpoint`          | LLM API endpoint                                          | true        | -                    |
+| `api_key`               | LLM API key                                               | true        | -                    |
+| `api_version`           | LLM API version                                           | false        | `2023-12-01-preview` |
+| `llm_model`             | LLM Model used for review                                 | false        | `gpt-4o`             |
+| `debug`                 | Enable debug mode (true/false)                            | false        | `false`              |
+| `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false        | `false`              |
+| `github_token`          | GitHub token for authentication                           | true        | -                    |
 
 ## Usage
 

@@ -1,0 +1,49 @@
+name: 'AI Code Review'
+description: 'Docker-based AI code review using LLM'
+author: 'Andrei Andreev'
+branding:
+  icon: 'code'
+  color: 'green'
+
+inputs:
+  api_endpoint:
+    description: 'LLM API endpoint'
+    required: true
+  api_key:
+    description: 'LLM API key'
+    required: true
+  api_version:
+    description: 'LLM API version'
+    required: false
+    default: '2023-12-01-preview'
+  llm_model:
+    description: 'LLM Model'
+    required: false
+    default: 'gpt-4o'
+
+  debug:
+    description: 'Debug mode'
+    required: false
+    default: false
+
+  add_review_resolution:
+    description: 'Add review resolution (like "APPROVE", "REQUEST_CHANGES", "COMMENT") to the PR'
+    required: false
+    default: false
+
+
+  github_token:
+    description: 'GitHub token'
+    required: true
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - "${{ inputs.api_endpoint }}"
+    - "${{ inputs.api_key }}"
+    - "${{ inputs.api_version }}"
+    - "${{ inputs.llm_model }}"
+    - "${{ inputs.github_token }}"
+    - "${{ inputs.debug }}"
+    - "${{ inputs.add_review_resolution }}"

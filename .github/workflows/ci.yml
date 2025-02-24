@@ -1,0 +1,20 @@
+name: AI Review
+on: [ pull_request ]
+permissions:
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./
+        with:
+          api_endpoint: ${{ secrets.LLM_ENDPOINT }}
+          api_key: ${{ secrets.LLM_API_KEY }}
+          api_version: ${{ secrets.LLM_API_VERSION }}
+          llm_model: ${{ secrets.LLM_MODEL }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          debug: true
+          add_review_resolution: false

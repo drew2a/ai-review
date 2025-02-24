@@ -1,0 +1,5 @@
+Review this pull request diff:
+
+```diff
+{{DIFF_CONTENT}}
+```

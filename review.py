@@ -21,7 +21,9 @@ supported_models = {
             "api-key": key,  # for Azure
             'Api-Version': version,
             'Content-Type': 'application/json'
-        }
+        },
+        'parse_json': lambda d: d['choices'][0]['message']['content'],
+
     },
     '^o1': {
         'has_system': False,
@@ -30,7 +32,8 @@ supported_models = {
             "api-key": key,  # for Azure
             'Api-Version': version,
             'Content-Type': 'application/json'
-        }
+        },
+        'parse_json': lambda d: d['choices'][0]['message']['content'],
     },
     '^claude': {
         'has_system': False,
@@ -41,7 +44,8 @@ supported_models = {
         },
         'additional_args': {
             'max_tokens': 1024,
-        }
+        },
+        'parse_json': lambda d: d['content'][0]['text']
     }
 }
 
@@ -73,17 +77,6 @@ def get_model(pattern):
     return next((m for m in supported_models if re.match(m, pattern)))
 
 
-def has_system_role(model):
-    """ Determines if the model should have 'system' role based on regex matching. """
-    patterns = [k for k, v in supported_models.items() if v['has_system']]
-    return True if any(re.match(p, model) for p in patterns) else False
-
-
-def create_header(pattern, key, version):
-    model = get_model(pattern)
-    return supported_models[model]['header'](key, version)
-
-
 def process_review(diff_content, args):
     """
     Read system and user prompts, replace the diff placeholder with diff content,
@@ -95,7 +88,8 @@ def process_review(diff_content, args):
     with open('/app/prompts/user_prompt.txt') as f:
         user_prompt = f.read().replace('{{DIFF_CONTENT}}', diff_content)
 
-    system_role = 'system' if has_system_role(args.llm_model) else 'user'
+    model = get_model(args.llm_model)
+    system_role = 'system' if supported_models[model]['has_system'] else 'user'
     prompt = {
         "model": args.llm_model,
         "messages": [
@@ -103,17 +97,16 @@ def process_review(diff_content, args):
             {"role": "user", "content": user_prompt}
         ]
     }
-    model = get_model(args.llm_model)
     if additional_args := supported_models[model].get('additional_args'):
         prompt.update(additional_args)
-        
+
     response = requests.post(
         args.api_endpoint,
-        headers=create_header(args.llm_model, args.api_key, args.api_version),
+        headers=supported_models[model]['header'](args.api_key, args.api_version),
         json=prompt
     )
     response.raise_for_status()
-    return response.json()['choices'][0]['message']['content']
+    return supported_models[model]['parse_json'](response.json())
 
 
 def publish_annotations(summary_content, github_token, debug, llm_model, add_review_resolution):

@@ -80,7 +80,6 @@ def get_model(pattern):
     raise ValueError(f'Unsupported model pattern: {pattern}')
 
 
-# add tests for this function AI!
 def process_review(diff_content, args):
     """
     Read system and user prompts, replace the diff placeholder with diff content,

@@ -74,9 +74,13 @@ def get_pr_diff(github_token):
 
 
 def get_model(pattern):
-    return next((m for m in supported_models if re.match(m, pattern)))
+    """ Return the model name that matches the pattern. """
+    if m := next((m for m in supported_models if re.match(m, pattern)), None):
+        return m
+    raise ValueError(f'Unsupported model pattern: {pattern}')
 
 
+# add tests for this function AI!
 def process_review(diff_content, args):
     """
     Read system and user prompts, replace the diff placeholder with diff content,

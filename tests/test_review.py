@@ -2,6 +2,7 @@ from review import get_model, supported_models
 
 
 def test_openai_create_header():
+    """ Test OpenAI header creation """
     model = get_model('gpt-4o')
 
     expected = {
@@ -15,6 +16,7 @@ def test_openai_create_header():
 
 
 def test_claude_create_header():
+    """ Test Claude header creation """
     model = get_model('claude-3-5-sonnet')
 
     expected = {

@@ -20,6 +20,19 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 - gpt-4o
 - o1
 
+### **My (Subjective) Review of the Particular Models**  
+
+I’ll grade them on a scale from **0 to 10**, where:  
+- **0** → Completely irrelevant comments  
+- **3** → My fresh junior/mid-level colleague  
+- **5** → My mid-level colleague who reads Stack Overflow  
+- **8** → Me  
+- **10** → My very smart colleague  
+
+So, based on this **(highly unscientific) scale**:  
+- **gpt-4o** → **2**  
+- **o1** → **3**  
+  
 ## Inputs
 
 | Name                    | Description                                               | Required | Default              |

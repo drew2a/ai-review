@@ -46,7 +46,7 @@ supported_models = {
             ]
         },
     },
-    '^claude': {
+    '^claude-3': {
         'header': lambda key, version: {
             "x-api-key": key,
             'anthropic-version': version,
@@ -92,7 +92,7 @@ def get_model(pattern):
     """ Return the model name that matches the pattern. """
     if m := next((m for m in supported_models if re.match(m, pattern)), None):
         return m
-    raise ValueError(f'Unsupported model pattern: {pattern}')
+    raise ValueError(f'Unsupported model pattern: {pattern}. Supported patterns are: {list(supported_models.keys())}') # add test for this line AI!
 
 
 def process_review(diff_content, args):

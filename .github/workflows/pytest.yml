@@ -28,7 +28,7 @@ jobs:
           pytest \
             --cov \
             --cov-report=xml \
-            --cov-report=term-missing 
+            --cov-report=term-missing
 
       - name: Compare coverage (optional)
         if: ${{ github.event_name == 'pull_request' }}

@@ -6,8 +6,8 @@ import re
 import requests
 from github import File, Github
 
-HEADER = '## AI Review'
 GITHUB_ACTIONS_BOT = 'github-actions[bot]'
+HEADER = '## Review'
 
 # Environment variables set by GitHub Actions
 github_ref = os.environ.get('GITHUB_REF')
@@ -92,7 +92,7 @@ def get_model(pattern):
     """ Return the model name that matches the pattern. """
     if m := next((m for m in supported_models if re.match(m, pattern)), None):
         return m
-    raise ValueError(f'Unsupported model pattern: {pattern}. Supported patterns are: {list(supported_models.keys())}') # add test for this line AI!
+    raise ValueError(f'Unsupported model pattern: {pattern}. Supported patterns are: {list(supported_models.keys())}')
 
 
 def process_review(diff_content, args):

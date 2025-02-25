@@ -1,4 +1,5 @@
 import argparse
+import pytest
 from unittest import mock
 from unittest.mock import patch
 
@@ -29,6 +30,14 @@ def test_claude_create_header():
         'x-api-key': 'example_key'
     }
     assert supported_models[model]['header']('example_key', '1.0') == expected
+
+
+def test_get_model_unsupported_pattern():
+    """ Test get_model raises ValueError for unsupported patterns """
+    with pytest.raises(ValueError) as exc_info:
+        get_model('unsupported-model')
+    expected_message = "Unsupported model pattern: unsupported-model. Supported patterns are: ['^gpt-4', '^o1', '^claude-3']"
+    assert str(exc_info.value) == expected_message
 
 
 @patch('builtins.open', mock.mock_open(read_data="prompt"))

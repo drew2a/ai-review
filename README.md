@@ -1,6 +1,6 @@
 [![Build and Test](https://github.com/drew2a/ai-review/actions/workflows/ci.yml/badge.svg)](https://github.com/drew2a/ai-review/actions/workflows/ci.yml) [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
-# AI Code Review Action
+# Code Review Action
 
 A GitHub Action that provides automated code review using AI to analyze pull request changes.
 
@@ -99,4 +99,3 @@ jobs:
 ## License
 
 Released under the [MIT License](LICENSE).
-

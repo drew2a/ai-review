@@ -21,7 +21,7 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 - claude-3-7-sonnet
 - claude-3-5-sonnet
 
-### **My (Subjective) Review of the Particular Models**
+### My (Subjective) Review of the Particular Models
 
 I’ll grade them on a scale from **0 to 10**, where:
 

@@ -15,7 +15,6 @@ github_repo = os.environ.get('GITHUB_REPOSITORY')
 
 supported_models = {
     '^gpt-4': {
-        'has_system': True,
         'header': lambda key, version: {
             'Authorization': f"Bearer {key}",  # for OpenAPI
             "api-key": key,  # for Azure
@@ -23,10 +22,15 @@ supported_models = {
             'Content-Type': 'application/json'
         },
         'parse_json': lambda d: d['choices'][0]['message']['content'],
-
+        'prompt': lambda model, system_message, user_message: {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+        },
     },
     '^o1': {
-        'has_system': False,
         'header': lambda key, version: {
             'Authorization': f"Bearer {key}",  # for OpenAPI
             "api-key": key,  # for Azure
@@ -34,18 +38,29 @@ supported_models = {
             'Content-Type': 'application/json'
         },
         'parse_json': lambda d: d['choices'][0]['message']['content'],
+        'prompt': lambda model, system_message, user_message: {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+        },
     },
     '^claude': {
-        'has_system': False,
         'header': lambda key, version: {
             "x-api-key": key,
             'anthropic-version': version,
             'Content-Type': 'application/json'
         },
-        'additional_args': {
+        'parse_json': lambda d: d['content'][0]['text'],
+        'prompt': lambda model, system_message, user_message: {
+            "model": model,
+            "system": system_message,
             'max_tokens': 1024,
+            "messages": [
+                {"role": "user", "content": user_message}
+            ]
         },
-        'parse_json': lambda d: d['content'][0]['text']
     }
 }
 
@@ -92,16 +107,7 @@ def process_review(diff_content, args):
         user_prompt = f.read().replace('{{DIFF_CONTENT}}', diff_content)
 
     model = get_model(args.llm_model)
-    system_role = 'system' if supported_models[model]['has_system'] else 'user'
-    prompt = {
-        "model": args.llm_model,
-        "messages": [
-            {"role": system_role, "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-    }
-    if additional_args := supported_models[model].get('additional_args'):
-        prompt.update(additional_args)
+    prompt = supported_models[model]['prompt'](args.llm_model, system_prompt, user_prompt)
 
     response = requests.post(
         args.api_endpoint,

@@ -6,12 +6,14 @@ import re
 import requests
 from github import File, Github
 
+from supported_models import supported_models
+
 HEADER = '## AI Review'
 GITHUB_ACTIONS_BOT = 'github-actions[bot]'
 
 # Environment variables set by GitHub Actions
-github_ref = os.environ['GITHUB_REF']
-github_repo = os.environ['GITHUB_REPOSITORY']
+github_ref = os.environ.get('GITHUB_REF')
+github_repo = os.environ.get('GITHUB_REPOSITORY')
 
 
 def parse_args():
@@ -37,6 +39,17 @@ def get_pr_diff(github_token):
     return pr.get_files()
 
 
+def has_system_role(model):
+    """ Determines if the model should have 'system' role based on regex matching. """
+    patterns = [k for k, v in supported_models.items() if v['has_system']]
+    return True if any(re.match(p, model) for p in patterns) else False
+
+
+def create_header(model, key, version):
+    first_matched = next((m for m in supported_models if re.match(m, model)))
+    return supported_models[first_matched]['header'](key, version)
+
+
 def process_review(diff_content, args):
     """
     Read system and user prompts, replace the diff placeholder with diff content,
@@ -48,15 +61,10 @@ def process_review(diff_content, args):
     with open('/app/prompts/user_prompt.txt') as f:
         user_prompt = f.read().replace('{{DIFF_CONTENT}}', diff_content)
 
-    system_role = 'system' if args.llm_model.startswith("gpt-4") else 'user'
+    system_role = 'system' if has_system_role(args.llm_model) else 'user'
     response = requests.post(
         args.api_endpoint,
-        headers={
-            'Authorization': f"Bearer {args.api_key}",  # for OpenAPI
-            "api-key": args.api_key,  # for Azure
-            'Api-Version': args.api_version,
-            'Content-Type': 'application/json'
-        },
+        headers=create_header(args.llm_model, args.api_key, args.api_version),
         json={
             "model": args.llm_model,
             "messages": [

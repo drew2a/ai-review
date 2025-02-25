@@ -33,11 +33,14 @@ supported_models = {
         }
     },
     '^claude': {
-        'has_system': True,
+        'has_system': False,
         'header': lambda key, version: {
             "x-api-key": key,
             'anthropic-version': version,
             'Content-Type': 'application/json'
+        },
+        'additional_args': {
+            'max_tokens': 1024,
         }
     }
 }
@@ -66,15 +69,19 @@ def get_pr_diff(github_token):
     return pr.get_files()
 
 
+def get_model(pattern):
+    return next((m for m in supported_models if re.match(m, pattern)))
+
+
 def has_system_role(model):
     """ Determines if the model should have 'system' role based on regex matching. """
     patterns = [k for k, v in supported_models.items() if v['has_system']]
     return True if any(re.match(p, model) for p in patterns) else False
 
 
-def create_header(model, key, version):
-    first_matched = next((m for m in supported_models if re.match(m, model)))
-    return supported_models[first_matched]['header'](key, version)
+def create_header(pattern, key, version):
+    model = get_model(pattern)
+    return supported_models[model]['header'](key, version)
 
 
 def process_review(diff_content, args):
@@ -89,16 +96,21 @@ def process_review(diff_content, args):
         user_prompt = f.read().replace('{{DIFF_CONTENT}}', diff_content)
 
     system_role = 'system' if has_system_role(args.llm_model) else 'user'
+    prompt = {
+        "model": args.llm_model,
+        "messages": [
+            {"role": system_role, "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    }
+    model = get_model(args.llm_model)
+    if additional_args := supported_models[model].get('additional_args'):
+        prompt.update(additional_args)
+        
     response = requests.post(
         args.api_endpoint,
         headers=create_header(args.llm_model, args.api_key, args.api_version),
-        json={
-            "model": args.llm_model,
-            "messages": [
-                {"role": system_role, "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        }
+        json=prompt
     )
     response.raise_for_status()
     return response.json()['choices'][0]['message']['content']

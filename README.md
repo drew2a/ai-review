@@ -4,7 +4,6 @@
 
 A GitHub Action that provides automated code review using AI to analyze pull request changes.
 
-
 ## Features
 
 - Automatically reviews pull request changes using AI
@@ -19,31 +18,37 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 
 - gpt-4o
 - o1
+- claude-3-7-sonnet
+- claude-3-5-sonnet
 
-### **My (Subjective) Review of the Particular Models**  
+### My (Subjective) Review of the Particular Models
 
-I’ll grade them on a scale from **0 to 10**, where:  
-- **0** → Completely irrelevant comments  
-- **3** → My fresh junior/mid-level colleague  
-- **5** → My mid-level colleague who reads Stack Overflow  
-- **8** → Me  
-- **10** → My very smart colleague  
+I’ll grade them on a scale from **0 to 10**, where:
 
-So, based on this **(highly unscientific) scale**:  
-- **gpt-4o** → **2**  
-- **o1** → **3**  
-  
+- **0** → Completely irrelevant comments
+- **3** → My fresh junior/mid-level colleague
+- **5** → My mid-level colleague who reads Stack Overflow
+- **8** → Me
+- **10** → My very smart colleague
+
+So, based on this **(highly unscientific) scale**:
+
+- **gpt-4o** → **2**
+- **o1** → **3**
+- **claude-3-5-sonnet** → **5**
+- **claude-3-7-sonnet** → **6**
+
 ## Inputs
 
 | Name                    | Description                                               | Required | Default              |
 |-------------------------|-----------------------------------------------------------|----------|----------------------|
-| `api_endpoint`          | LLM API endpoint                                          | true        | -                    |
-| `api_key`               | LLM API key                                               | true        | -                    |
-| `api_version`           | LLM API version                                           | false        | `2023-12-01-preview` |
-| `llm_model`             | LLM Model used for review                                 | false        | `gpt-4o`             |
-| `debug`                 | Enable debug mode (true/false)                            | false        | `false`              |
-| `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false        | `false`              |
-| `github_token`          | GitHub token for authentication                           | true        | -                    |
+| `api_endpoint`          | LLM API endpoint                                          | true     | -                    |
+| `api_key`               | LLM API key                                               | true     | -                    |
+| `api_version`           | LLM API version                                           | false    | `2023-12-01-preview` |
+| `llm_model`             | LLM Model used for review                                 | false    | `gpt-4o`             |
+| `debug`                 | Enable debug mode (true/false)                            | false    | `false`              |
+| `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
+| `github_token`          | GitHub token for authentication                           | true     | -                    |
 
 ## Usage
 
@@ -95,4 +100,3 @@ jobs:
 ## License
 
 Released under the [MIT License](LICENSE).
-

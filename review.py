@@ -6,12 +6,63 @@ import re
 import requests
 from github import File, Github
 
-HEADER = '## AI Review'
 GITHUB_ACTIONS_BOT = 'github-actions[bot]'
+HEADER = '# AI Review'
 
 # Environment variables set by GitHub Actions
-github_ref = os.environ['GITHUB_REF']
-github_repo = os.environ['GITHUB_REPOSITORY']
+github_ref = os.environ.get('GITHUB_REF')
+github_repo = os.environ.get('GITHUB_REPOSITORY')
+
+supported_models = {
+    '^gpt-4': {
+        'header': lambda key, version: {
+            'Authorization': f"Bearer {key}",  # for OpenAPI
+            "api-key": key,  # for Azure
+            'Api-Version': version,
+            'Content-Type': 'application/json'
+        },
+        'parse_json': lambda d: d['choices'][0]['message']['content'],
+        'prompt': lambda model, system_message, user_message: {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+        },
+    },
+    '^o1': {
+        'header': lambda key, version: {
+            'Authorization': f"Bearer {key}",  # for OpenAPI
+            "api-key": key,  # for Azure
+            'Api-Version': version,
+            'Content-Type': 'application/json'
+        },
+        'parse_json': lambda d: d['choices'][0]['message']['content'],
+        'prompt': lambda model, system_message, user_message: {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+        },
+    },
+    '^claude-3': {
+        'header': lambda key, version: {
+            "x-api-key": key,
+            'anthropic-version': version,
+            'Content-Type': 'application/json'
+        },
+        'parse_json': lambda d: d['content'][0]['text'],
+        'prompt': lambda model, system_message, user_message: {
+            "model": model,
+            "system": system_message,
+            'max_tokens': 1024,
+            "messages": [
+                {"role": "user", "content": user_message}
+            ]
+        },
+    }
+}
 
 
 def parse_args():
@@ -37,6 +88,13 @@ def get_pr_diff(github_token):
     return pr.get_files()
 
 
+def get_model(pattern):
+    """ Return the model name that matches the pattern. """
+    if m := next((m for m in supported_models if re.match(m, pattern)), None):
+        return m
+    raise ValueError(f'Unsupported model pattern: {pattern}. Supported patterns are: {list(supported_models.keys())}')
+
+
 def process_review(diff_content, args):
     """
     Read system and user prompts, replace the diff placeholder with diff content,
@@ -48,25 +106,16 @@ def process_review(diff_content, args):
     with open('/app/prompts/user_prompt.txt') as f:
         user_prompt = f.read().replace('{{DIFF_CONTENT}}', diff_content)
 
-    system_role = 'system' if args.llm_model.startswith("gpt-4") else 'user'
+    model = get_model(args.llm_model)
+    prompt = supported_models[model]['prompt'](args.llm_model, system_prompt, user_prompt)
+
     response = requests.post(
         args.api_endpoint,
-        headers={
-            'Authorization': f"Bearer {args.api_key}",  # for OpenAPI
-            "api-key": args.api_key,  # for Azure
-            'Api-Version': args.api_version,
-            'Content-Type': 'application/json'
-        },
-        json={
-            "model": args.llm_model,
-            "messages": [
-                {"role": system_role, "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        }
+        headers=supported_models[model]['header'](args.api_key, args.api_version),
+        json=prompt
     )
     response.raise_for_status()
-    return response.json()['choices'][0]['message']['content']
+    return supported_models[model]['parse_json'](response.json())
 
 
 def publish_annotations(summary_content, github_token, debug, llm_model, add_review_resolution):

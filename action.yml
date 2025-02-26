@@ -1,4 +1,4 @@
-name: 'AI Code Review'
+name: 'AI Review'
 description: 'Docker-based AI code review using LLM'
 author: 'Andrei Andreev'
 branding:

@@ -20,6 +20,7 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 - o1
 - claude-3-7-sonnet
 - claude-3-5-sonnet
+- gemini-2.0-flash
 
 ### My (Subjective) Review of the Particular Models
 

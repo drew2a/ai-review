@@ -1,9 +1,10 @@
 import argparse
-import pytest
 from unittest import mock
 from unittest.mock import patch
 
-from review import get_model, process_review, supported_models
+import pytest
+
+from review import extract_json, get_model, process_review, supported_models
 
 
 def test_openai_create_header():
@@ -36,7 +37,7 @@ def test_get_model_unsupported_pattern():
     """ Test get_model raises ValueError for unsupported patterns """
     with pytest.raises(ValueError) as exc_info:
         get_model('unsupported-model')
-    expected_message = "Unsupported model pattern: unsupported-model. Supported patterns are: ['^gpt-4', '^o1', '^claude-3']"
+    expected_message = "Unsupported model pattern: unsupported-model. Supported patterns are: ['^gpt-4', '^o1', '^claude-3', '^gemini-2']"
     assert str(exc_info.value) == expected_message
 
 
@@ -81,3 +82,26 @@ def test_process_review(mock_post):
             ]
         }
     )
+
+
+def test_extract_json():
+    text = '''
+    any
+    {
+    json {
+    }
+    }
+    text
+    '''
+
+    expected = '''{
+    json {
+    }
+    }'''
+
+    assert extract_json(text) == expected
+
+
+def test_extract_no_text():
+    assert not extract_json(None)
+    assert extract_json('') == ''

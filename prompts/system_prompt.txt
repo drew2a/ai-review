@@ -35,7 +35,8 @@ Your output must consist of two parts:
 
 To ensure reliable parsing, after your review summary, output a unique marker line exactly as follows: `### TECHNICAL INFORMATION`
 
-Immediately following this marker, output the JSON object exactly as specified below. The JSON object must have the following structure:
+Immediately following this marker, output the JSON object exactly as specified below.
+The JSON object must have the following structure:
 {
   "annotations": [ ... ],
   "review": {

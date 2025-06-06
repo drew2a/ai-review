@@ -37,6 +37,7 @@ So, based on this **(highly unscientific) scale**:
 - **o1** → **3**
 - **claude-3-5-sonnet** → **5**
 - **claude-3-7-sonnet** → **6**
+- **gemini-2.0-flash** → **2**
 
 ## Inputs
 

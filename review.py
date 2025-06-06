@@ -61,6 +61,26 @@ supported_models = {
                 {"role": "user", "content": user_message}
             ]
         },
+    },
+    '^gemini-2': {
+        'header': lambda key, version: {
+            'x-goog-api-key': key,
+            'Content-Type': 'application/json'
+        },
+        'parse_json': lambda d: (
+            d['candidates'][0]['content']['parts'][0]['text']
+        ),
+        'prompt': lambda model, system_message, user_message: {
+            "system_instruction": {
+                "parts": [{"text": system_message}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": user_message}]
+                }
+            ]
+        },
     }
 }
 
@@ -151,6 +171,7 @@ def publish_annotations(summary_content, github_token, debug, llm_model, add_rev
         technical_info_str = None
 
     # Process the JSON block with technical information (annotations)
+    technical_info_str = extract_json(technical_info_str)
     if technical_info_str:
         try:
             tech_info = json.loads(technical_info_str)
@@ -234,6 +255,12 @@ def help_llm(diff_file: File):
                 output_lines.append(line)
     output_lines.append("```")
     return "\n".join(output_lines)
+
+
+def extract_json(text):
+    if not text:
+        return text
+    return re.search(r'\{.*\}', text, re.S).group(0)
 
 
 if __name__ == "__main__":

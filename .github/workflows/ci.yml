@@ -10,10 +10,10 @@ jobs:
 
       - uses: ./
         with:
-          api_endpoint: ${{ secrets.ANTHROPIC_LLM_ENDPOINT }}
-          api_key: ${{ secrets.ANTHROPIC_LLM_API_KEY }}
-          api_version: ${{ secrets.ANTHROPIC_LLM_API_VERSION }}
-          llm_model: ${{ secrets.ANTHROPIC_LLM_MODEL }}
+          api_endpoint: ${{ secrets.GEMINI_LLM_ENDPOINT }}
+          api_key: ${{ secrets.GEMINI_LLM_API_KEY }}
+#          api_version: ${{ secrets.ANTHROPIC_LLM_API_VERSION }}
+          llm_model: ${{ secrets.GEMINI_LLM_MODEL }}
 
           github_token: ${{ secrets.GITHUB_TOKEN }}
 

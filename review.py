@@ -94,8 +94,9 @@ def parse_args():
     parser.add_argument('llm_model', type=str, help='LLM model name')
     parser.add_argument('github_token', type=str, help='GitHub Token')
     parser.add_argument('debug', type=str, help='Debug mode')
-    parser.add_argument('add_joke', type=str, help='Add joke')
     parser.add_argument('add_review_resolution', type=str, help='Add review resolution')
+    parser.add_argument('add_joke', type=str, help='Add joke')
+
     return parser.parse_args()
 
 

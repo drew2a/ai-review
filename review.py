@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+from pathlib import Path
 
 import requests
 from github import File, Github
@@ -93,6 +94,7 @@ def parse_args():
     parser.add_argument('llm_model', type=str, help='LLM model name')
     parser.add_argument('github_token', type=str, help='GitHub Token')
     parser.add_argument('debug', type=str, help='Debug mode')
+    parser.add_argument('add_joke', type=str, help='Add joke')
     parser.add_argument('add_review_resolution', type=str, help='Add review resolution')
     return parser.parse_args()
 
@@ -120,11 +122,13 @@ def process_review(diff_content, args):
     Read system and user prompts, replace the diff placeholder with diff content,
     call the LLM API, and return the response content.
     """
-    with open('/app/prompts/system_prompt.txt') as f:
-        system_prompt = f.read()
+    system_prompt = Path('/app/prompts/system_prompt.txt').read_text()
+    if args.add_joke.lower() == 'true':
+        humor_integration = Path('/app/prompts/humor_integration.txt').read_text()
+        system_prompt = f'{system_prompt}\n{humor_integration}'
 
-    with open('/app/prompts/user_prompt.txt') as f:
-        user_prompt = f.read().replace('{{DIFF_CONTENT}}', diff_content)
+    user_prompt = Path('/app/prompts/user_prompt.txt').read_text()
+    user_prompt = user_prompt.replace('{{DIFF_CONTENT}}', diff_content)
 
     model = get_model(args.llm_model)
     prompt = supported_models[model]['prompt'](args.llm_model, system_prompt, user_prompt)

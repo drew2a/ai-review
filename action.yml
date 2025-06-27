@@ -31,6 +31,10 @@ inputs:
     required: false
     default: false
 
+  add_joke:
+    description: 'Add a joke to the review comment'
+    required: false
+    default: false
 
   github_token:
     description: 'GitHub token'
@@ -47,3 +51,4 @@ runs:
     - "${{ inputs.github_token }}"
     - "${{ inputs.debug }}"
     - "${{ inputs.add_review_resolution }}"
+    - "${{ inputs.add_joke }}"

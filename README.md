@@ -50,6 +50,7 @@ So, based on this **(highly unscientific) scale**:
 | `llm_model`             | LLM Model used for review                                 | false    | `gpt-4o`             |
 | `debug`                 | Enable debug mode (true/false)                            | false    | `false`              |
 | `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
+| `add_joke`              | Add a joke to the review comment                          | false    | `false`              |
 | `github_token`          | GitHub token for authentication                           | true     | -                    |
 
 ## Usage
@@ -68,6 +69,7 @@ To use this action in your GitHub workflow, add the following step:
 
     debug: false
     add_review_resolution: false
+    add_joke: false
 ```
 
 ### Example Workflow
@@ -97,6 +99,7 @@ jobs:
 
           debug: true
           add_review_resolution: false
+          add_joke: false
 ```
 
 ## License

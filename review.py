@@ -133,11 +133,7 @@ def process_review(title: str, body: Optional[str], diff_string, pr_author: str,
     customizations = parse_author_customization(args.author_customization)
     author_prompt_addition = get_author_specific_prompt_additions(pr_author, customizations)
     if author_prompt_addition:
-        # Insert customization in the "## Addition" section
-        system_prompt = system_prompt.replace(
-            '## Addition\n',
-            f'## Addition\n{author_prompt_addition}\n'
-        )
+        system_prompt += f'\n{author_prompt_addition}'
 
     env = Environment(
         loader=FileSystemLoader('/app/prompts'),

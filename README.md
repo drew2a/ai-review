@@ -54,6 +54,7 @@ So, based on this **(highly unscientific) scale**:
 | `debug`                 | Enable debug mode (true/false)                            | false    | `false`              |
 | `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
 | `add_joke`              | Add a joke to the review comment                          | false    | `false`              |
+| `author_customization`  | YAML configuration for customizing reviews based on PR author | false | -                    |
 | `github_token`          | GitHub token for authentication                           | true     | -                    |
 
 ## Usage
@@ -73,6 +74,13 @@ To use this action in your GitHub workflow, add the following step:
     debug: false
     add_review_resolution: false
     add_joke: false
+    author_customization: |
+      senior_dev:
+        prompt_addition: "This is an experienced developer. Focus on architecture and design patterns."
+      junior_dev:
+        prompt_addition: "This is a junior developer. Provide educational feedback and explanations."
+      default:
+        prompt_addition: "Standard review process."
 ```
 
 ### Example Workflow
@@ -103,6 +111,54 @@ jobs:
           debug: true
           add_review_resolution: false
           add_joke: false
+```
+
+## Author Customization
+
+The `author_customization` parameter allows you to customize the review behavior based on the PR author. This is useful for providing different types of feedback for team members with different experience levels or roles.
+
+### Configuration Format
+
+The customization is provided as YAML with the following structure:
+
+```yaml
+username1:
+  prompt_addition: "Custom review guidance for this user"
+username2: "Simple string format also supported"
+default:
+  prompt_addition: "Default guidance for all other users"
+```
+
+### Example Configuration
+
+```yaml
+author_customization: |
+  senior_engineer:
+    prompt_addition: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
+  
+  junior_developer:
+    prompt_addition: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
+  
+  external_contributor:
+    prompt_addition: "Be welcoming and provide clear explanations. Focus on project conventions and coding standards."
+  
+  default:
+    prompt_addition: "Standard review process with balanced feedback."
+```
+
+### Usage in Workflow
+
+```yaml
+- uses: drew2a/ai-review@v1
+  with:
+    # ... other parameters ...
+    author_customization: |
+      alice:
+        prompt_addition: "Focus on performance and security concerns"
+      bob:
+        prompt_addition: "Educational feedback welcomed"
+      default:
+        prompt_addition: "Standard review"
 ```
 
 ## License

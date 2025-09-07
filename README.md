@@ -75,8 +75,8 @@ To use this action in your GitHub workflow, add the following step:
     add_review_resolution: false
     add_joke: false
     author_customization: |
-      senior_dev: "This is an experienced developer. Focus on architecture and design patterns."
-      junior_dev: "This is a junior developer. Provide educational feedback and explanations."
+      torvalds: "This is an experienced developer. Focus on architecture and design patterns."
+      defunkt: "This is a junior developer. Provide educational feedback and explanations."
 ```
 
 ### Example Workflow
@@ -118,8 +118,8 @@ The `author_customization` parameter allows you to customize the review behavior
 The customization is provided as YAML using actual GitHub usernames:
 
 ```yaml
-github_username1: "Custom review guidance for this user"
-github_username2: "Different guidance for another user"
+torvalds: "Custom review guidance for this user"
+defunkt: "Different guidance for another user"
 ```
 
 ### Example Configuration
@@ -128,8 +128,8 @@ Here's an example for a team with users who get customized behavior:
 
 ```yaml
 author_customization: |
-  user1: "Use a more friendly manner since they're beginners. Give more examples and explanations to help them learn."
-  user2: "Use a super formal tone and provide low-level grounding. Focus on technical precision and detailed analysis."
+  torvalds: "Use a more friendly manner since they're beginners. Give more examples and explanations to help them learn."
+  defunkt: "Use a super formal tone and provide low-level grounding. Focus on technical precision and detailed analysis."
 ```
 
 ### Role-Based Example
@@ -138,9 +138,9 @@ You can also organize by roles using GitHub usernames:
 
 ```yaml
 author_customization: |
-  john_senior: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
-  alice_junior: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
-  external_contributor: "Be welcoming and provide clear explanations. Focus on project conventions and coding standards."
+  torvalds: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
+  defunkt: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
+  octocat: "Be welcoming and provide clear explanations. Focus on project conventions and coding standards."
 ```
 
 ### Usage in Workflow
@@ -150,8 +150,8 @@ author_customization: |
   with:
     # ... other parameters ...
     author_customization: |
-      alice: "Focus on performance and security concerns"
-      bob: "Educational feedback welcomed"
+      torvalds: "Focus on performance and security concerns"
+      defunkt: "Educational feedback welcomed"
 ```
 
 ## License

@@ -122,13 +122,13 @@ def test_parse_author_customization_empty():
 def test_parse_author_customization_valid_yaml():
     """ Test parsing valid YAML author customization """
     yaml_config = """
-test_user: "Be extra careful with this user's code"
-another_user: "Quick review for this user"
+torvalds: "Be extra careful with this user's code"
+defunkt: "Quick review for this user"
 """
     result = parse_author_customization(yaml_config)
     expected = {
-        'test_user': "Be extra careful with this user's code",
-        'another_user': "Quick review for this user"
+        'torvalds': "Be extra careful with this user's code",
+        'defunkt': "Quick review for this user"
     }
     assert result == expected
 
@@ -143,20 +143,20 @@ def test_parse_author_customization_invalid_yaml():
 def test_get_author_specific_prompt_additions_direct_match():
     """ Test getting prompt additions for direct author match """
     customizations = {
-        'test_user': "Be extra careful",
-        'another_user': "Quick review"
+        'torvalds': "Be extra careful",
+        'defunkt': "Quick review"
     }
-    result = get_author_specific_prompt_additions('test_user', customizations)
+    result = get_author_specific_prompt_additions('torvalds', customizations)
     assert result == "Be extra careful"
     
-    result = get_author_specific_prompt_additions('another_user', customizations)
+    result = get_author_specific_prompt_additions('defunkt', customizations)
     assert result == "Quick review"
 
 
 def test_get_author_specific_prompt_additions_no_match():
     """ Test getting prompt additions with no match - returns empty string """
     customizations = {
-        'test_user': "Be extra careful"
+        'torvalds': "Be extra careful"
     }
     result = get_author_specific_prompt_additions('unknown_user', customizations)
     assert result == ""

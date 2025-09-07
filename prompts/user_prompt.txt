@@ -1,5 +1,7 @@
-Review this pull request diff:
+Review this pull request with the following input (in yaml format) and diff:
 
-```diff
-{{DIFF_CONTENT}}
-```
+{{ INPUT }}
+
+# DIFF
+
+{{ DIFF }}

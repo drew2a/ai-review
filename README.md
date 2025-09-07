@@ -54,6 +54,7 @@ So, based on this **(highly unscientific) scale**:
 | `debug`                 | Enable debug mode (true/false)                            | false    | `false`              |
 | `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
 | `add_joke`              | Add a joke to the review comment                          | false    | `false`              |
+| `author_customization`  | YAML configuration for customizing reviews based on PR author | false | -                    |
 | `github_token`          | GitHub token for authentication                           | true     | -                    |
 
 ## Usage
@@ -73,6 +74,9 @@ To use this action in your GitHub workflow, add the following step:
     debug: false
     add_review_resolution: false
     add_joke: false
+    author_customization: |
+      torvalds: "This is an experienced developer. Focus on architecture and design patterns."
+      defunkt: "This is a junior developer. Provide educational feedback and explanations."
 ```
 
 ### Example Workflow
@@ -103,6 +107,51 @@ jobs:
           debug: true
           add_review_resolution: false
           add_joke: false
+```
+
+## Author Customization
+
+The `author_customization` parameter allows you to customize the review behavior based on the PR author's GitHub username. This is useful for providing different types of feedback for team members with different experience levels or roles.
+
+### Configuration Format
+
+The customization is provided as YAML using actual GitHub usernames:
+
+```yaml
+torvalds: "Custom review guidance for this user"
+defunkt: "Different guidance for another user"
+```
+
+### Example Configuration
+
+Here's an example for a team with users who get customized behavior:
+
+```yaml
+author_customization: |
+  torvalds: "Use a more friendly manner since they're beginners. Give more examples and explanations to help them learn."
+  defunkt: "Use a super formal tone and provide low-level grounding. Focus on technical precision and detailed analysis."
+```
+
+### Role-Based Example
+
+You can also organize by roles using GitHub usernames:
+
+```yaml
+author_customization: |
+  torvalds: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
+  defunkt: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
+  octocat: "Be welcoming and provide clear explanations. Focus on project conventions and coding standards."
+```
+
+### Usage in Workflow
+
+```yaml
+- uses: drew2a/ai-review@v1
+  with:
+    # ... other parameters ...
+    author_customization: |
+      torvalds: "Focus on performance and security concerns"
+      defunkt: "Educational feedback welcomed"
 ```
 
 ## License

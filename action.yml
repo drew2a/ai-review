@@ -36,6 +36,11 @@ inputs:
     required: false
     default: false
 
+  author_customization:
+    description: 'YAML configuration for customizing reviews based on PR author'
+    required: false
+    default: ''
+
   github_token:
     description: 'GitHub token'
     required: true
@@ -52,3 +57,4 @@ runs:
     - "${{ inputs.debug }}"
     - "${{ inputs.add_review_resolution }}"
     - "${{ inputs.add_joke }}"
+    - "${{ inputs.author_customization }}"

@@ -99,6 +99,7 @@ def parse_args():
     parser.add_argument('debug', type=str, help='Debug mode')
     parser.add_argument('add_review_resolution', type=str, help='Add review resolution')
     parser.add_argument('add_joke', type=str, help='Add joke')
+    parser.add_argument('author_customization', type=str, help='Author customization YAML')
 
     return parser.parse_args()
 
@@ -120,13 +121,19 @@ def dump_to_yaml(data: dict | list[dict] | None) -> str:
     return f'```yaml\n{yaml_dump}```'
 
 
-def process_review(title: str, body: Optional[str], diff_string, args, debug):
+def process_review(title: str, body: Optional[str], diff_string, pr_author: str, args, debug):
     """ Calls the LLM API to generate a review based on the PR title, body, and diff."""
 
     system_prompt = Path('/app/prompts/system_prompt.txt').read_text()
     if args.add_joke.lower() == 'true':
         humor_integration = Path('/app/prompts/humor_integration.txt').read_text()
         system_prompt = f'{system_prompt}\n{humor_integration}'
+
+    # Apply author-specific customizations
+    customizations = parse_author_customization(args.author_customization)
+    author_prompt_addition = get_author_specific_prompt_additions(pr_author, customizations)
+    if author_prompt_addition:
+        system_prompt += f"\n## Author Customization\n{author_prompt_addition}"
 
     env = Environment(
         loader=FileSystemLoader('/app/prompts'),
@@ -139,6 +146,7 @@ def process_review(title: str, body: Optional[str], diff_string, args, debug):
         'INPUT': dump_to_yaml({
             'pr_title': title,
             'pr_body': body,
+            'pr_author': pr_author,
         }),
         'DIFF': diff_string
     }
@@ -147,6 +155,7 @@ def process_review(title: str, body: Optional[str], diff_string, args, debug):
     user_prompt = user_template.render(**user_context)
 
     if debug:
+        print(system_prompt)
         print(user_prompt)
 
     model = get_model(args.llm_model)
@@ -286,6 +295,24 @@ def extract_json(text):
     return re.search(r'\{.*\}', text, re.S).group(0)
 
 
+def parse_author_customization(customization_yaml: str):
+    """Parse the author customization YAML and return a dictionary."""
+    if not customization_yaml:
+        return {}
+    
+    try:
+        return yaml.safe_load(customization_yaml) or {}
+    except yaml.YAMLError as e:
+        print(f"Warning: Failed to parse author customization YAML: {e}")
+        return {}
+
+
+def get_author_specific_prompt_additions(pr_author: str, customizations: dict):
+    """Get author-specific prompt additions based on customization rules."""
+    value = customizations.get(pr_author, '')
+    return str(value)
+
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -293,6 +320,9 @@ if __name__ == "__main__":
     repo = g.get_repo(github_repo)
     pr_number = github_ref.split('/')[-2]
     pr = repo.get_pull(int(pr_number))
+
+    # Get PR author information
+    pr_author = pr.user.login if pr.user else ""
 
     diff = pr.get_files()
 
@@ -302,6 +332,6 @@ if __name__ == "__main__":
     debug = args.debug.lower() == 'true'
 
     add_review_resolution = args.add_review_resolution.lower() == 'true'
-    review_content = process_review(pr.title, pr.body, diff_string, args, debug)
+    review_content = process_review(pr.title, pr.body, diff_string, pr_author, args, debug)
 
     publish_annotations(review_content, args.github_token, debug, args.llm_model, add_review_resolution)

@@ -75,12 +75,8 @@ To use this action in your GitHub workflow, add the following step:
     add_review_resolution: false
     add_joke: false
     author_customization: |
-      senior_dev:
-        prompt_addition: "This is an experienced developer. Focus on architecture and design patterns."
-      junior_dev:
-        prompt_addition: "This is a junior developer. Provide educational feedback and explanations."
-      default:
-        prompt_addition: "Standard review process."
+      senior_dev: "This is an experienced developer. Focus on architecture and design patterns."
+      junior_dev: "This is a junior developer. Provide educational feedback and explanations."
 ```
 
 ### Example Workflow
@@ -122,27 +118,18 @@ The `author_customization` parameter allows you to customize the review behavior
 The customization is provided as YAML using actual GitHub usernames:
 
 ```yaml
-github_username1:
-  prompt_addition: "Custom review guidance for this user"
-github_username2: "Simple string format also supported"
-default:
-  prompt_addition: "Default guidance for all other users"
+github_username1: "Custom review guidance for this user"
+github_username2: "Different guidance for another user"
 ```
 
 ### Example Configuration
 
-Here's an example for a team with 3 users where user1 and user2 get customized behavior, while user3 and any new users get the default:
+Here's an example for a team with users who get customized behavior:
 
 ```yaml
 author_customization: |
-  user1:
-    prompt_addition: "Use a more friendly manner since they're beginners. Give more examples and explanations to help them learn."
-  
-  user2:
-    prompt_addition: "Use a super formal tone and provide low-level grounding. Focus on technical precision and detailed analysis."
-  
-  default:
-    prompt_addition: "Standard review process with balanced feedback."
+  user1: "Use a more friendly manner since they're beginners. Give more examples and explanations to help them learn."
+  user2: "Use a super formal tone and provide low-level grounding. Focus on technical precision and detailed analysis."
 ```
 
 ### Role-Based Example
@@ -151,17 +138,9 @@ You can also organize by roles using GitHub usernames:
 
 ```yaml
 author_customization: |
-  john_senior:
-    prompt_addition: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
-  
-  alice_junior:
-    prompt_addition: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
-  
-  external_contributor:
-    prompt_addition: "Be welcoming and provide clear explanations. Focus on project conventions and coding standards."
-  
-  default:
-    prompt_addition: "Standard review process with balanced feedback."
+  john_senior: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
+  alice_junior: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
+  external_contributor: "Be welcoming and provide clear explanations. Focus on project conventions and coding standards."
 ```
 
 ### Usage in Workflow
@@ -171,12 +150,8 @@ author_customization: |
   with:
     # ... other parameters ...
     author_customization: |
-      alice:
-        prompt_addition: "Focus on performance and security concerns"
-      bob:
-        prompt_addition: "Educational feedback welcomed"
-      default:
-        prompt_addition: "Standard review"
+      alice: "Focus on performance and security concerns"
+      bob: "Educational feedback welcomed"
 ```
 
 ## License

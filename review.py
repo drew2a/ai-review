@@ -311,21 +311,11 @@ def get_author_specific_prompt_additions(pr_author: str, customizations: dict):
     if not customizations or not pr_author:
         return ""
     
-    # Direct author match
+    # Direct author match - only support string values
     if pr_author in customizations:
         author_config = customizations[pr_author]
-        if isinstance(author_config, dict) and 'prompt_addition' in author_config:
-            return author_config['prompt_addition']
-        elif isinstance(author_config, str):
+        if isinstance(author_config, str):
             return author_config
-    
-    # Check for patterns or defaults
-    if 'default' in customizations:
-        default_config = customizations['default']
-        if isinstance(default_config, dict) and 'prompt_addition' in default_config:
-            return default_config['prompt_addition']
-        elif isinstance(default_config, str):
-            return default_config
     
     return ""
 

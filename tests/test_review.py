@@ -122,17 +122,13 @@ def test_parse_author_customization_empty():
 def test_parse_author_customization_valid_yaml():
     """ Test parsing valid YAML author customization """
     yaml_config = """
-test_user:
-  prompt_addition: "Be extra careful with this user's code"
+test_user: "Be extra careful with this user's code"
 another_user: "Quick review for this user"
-default:
-  prompt_addition: "Standard review process"
 """
     result = parse_author_customization(yaml_config)
     expected = {
-        'test_user': {'prompt_addition': "Be extra careful with this user's code"},
-        'another_user': "Quick review for this user",
-        'default': {'prompt_addition': "Standard review process"}
+        'test_user': "Be extra careful with this user's code",
+        'another_user': "Quick review for this user"
     }
     assert result == expected
 
@@ -147,7 +143,7 @@ def test_parse_author_customization_invalid_yaml():
 def test_get_author_specific_prompt_additions_direct_match():
     """ Test getting prompt additions for direct author match """
     customizations = {
-        'test_user': {'prompt_addition': "Be extra careful"},
+        'test_user': "Be extra careful",
         'another_user': "Quick review"
     }
     result = get_author_specific_prompt_additions('test_user', customizations)
@@ -157,20 +153,10 @@ def test_get_author_specific_prompt_additions_direct_match():
     assert result == "Quick review"
 
 
-def test_get_author_specific_prompt_additions_default():
-    """ Test getting prompt additions with default fallback """
-    customizations = {
-        'test_user': {'prompt_addition': "Be extra careful"},
-        'default': {'prompt_addition': "Standard review"}
-    }
-    result = get_author_specific_prompt_additions('unknown_user', customizations)
-    assert result == "Standard review"
-
-
 def test_get_author_specific_prompt_additions_no_match():
-    """ Test getting prompt additions with no match and no default """
+    """ Test getting prompt additions with no match - returns empty string """
     customizations = {
-        'test_user': {'prompt_addition': "Be extra careful"}
+        'test_user': "Be extra careful"
     }
     result = get_author_specific_prompt_additions('unknown_user', customizations)
     assert result == ""

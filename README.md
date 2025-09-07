@@ -21,6 +21,8 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 - claude-3-7-sonnet
 - claude-3-5-sonnet
 - gemini-2.0-flash
+- gemini-2.5-flash
+- gemini-2.5-pro
 
 ### My (Subjective) Review of the Particular Models
 
@@ -39,6 +41,7 @@ So, based on this **(highly unscientific) scale**:
 - **claude-3-5-sonnet** → **5**
 - **claude-3-7-sonnet** → **6**
 - **gemini-2.0-flash** → **2**
+- **gemini-2.5-pro** → **3**
 
 ## Inputs
 

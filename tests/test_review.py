@@ -4,6 +4,7 @@ from unittest import mock
 from unittest.mock import Mock, patch
 
 import pytest
+from jinja2 import Environment
 
 from review import extract_json, get_model, process_review, supported_models
 
@@ -43,6 +44,7 @@ def test_get_model_unsupported_pattern():
 
 
 @patch.object(Path, 'read_text', Mock(return_value='prompt'))
+@patch.object(Environment, 'get_template', Mock(return_value=Mock(render=Mock(return_value='user_prompt'))))
 @patch('requests.post')
 def test_process_review(mock_post):
     """ Test the process_review function """
@@ -65,7 +67,7 @@ def test_process_review(mock_post):
     mock_response.raise_for_status = mock.Mock()
     mock_post.return_value = mock_response
 
-    result = process_review(diff_content, args)
+    result = process_review('title', 'body', diff_content, args, False)
 
     assert result == expected_response
     mock_post.assert_called_once_with(
@@ -80,7 +82,7 @@ def test_process_review(mock_post):
             "model": args.llm_model,
             "messages": [
                 {"role": 'system', "content": "prompt\nprompt"},
-                {"role": "user", "content": "prompt"}
+                {'role': 'user', 'content': 'user_prompt'}
             ]
         }
     )

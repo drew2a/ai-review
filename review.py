@@ -3,9 +3,12 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 import requests
+import yaml
 from github import File, Github
+from jinja2 import Environment, FileSystemLoader
 
 GITHUB_ACTIONS_BOT = 'github-actions[bot]'
 HEADER = '# AI Review'
@@ -100,17 +103,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_pr_diff(github_token):
-    """
-    Retrieve the pull request diff files using the GitHub API.
-    """
-    g = Github(github_token)
-    repo = g.get_repo(github_repo)
-    pr_number = github_ref.split('/')[-2]
-    pr = repo.get_pull(int(pr_number))
-    return pr.get_files()
-
-
 def get_model(pattern):
     """ Return the model name that matches the pattern. """
     if m := next((m for m in supported_models if re.match(m, pattern)), None):
@@ -118,18 +110,44 @@ def get_model(pattern):
     raise ValueError(f'Unsupported model pattern: {pattern}. Supported patterns are: {list(supported_models.keys())}')
 
 
-def process_review(diff_content, args):
-    """
-    Read system and user prompts, replace the diff placeholder with diff content,
-    call the LLM API, and return the response content.
-    """
+def dump_to_yaml(data: dict | list[dict] | None) -> str:
+    """ Dump a dictionary or list of dictionaries to YAML with markdown code block."""
+    if not data:
+        return ''
+
+    yaml_dump = yaml.dump(data, allow_unicode=True, sort_keys=False)
+
+    return f'```yaml\n{yaml_dump}```'
+
+
+def process_review(title: str, body: Optional[str], diff_string, args, debug):
+    """ Calls the LLM API to generate a review based on the PR title, body, and diff."""
+
     system_prompt = Path('/app/prompts/system_prompt.txt').read_text()
     if args.add_joke.lower() == 'true':
         humor_integration = Path('/app/prompts/humor_integration.txt').read_text()
         system_prompt = f'{system_prompt}\n{humor_integration}'
 
-    user_prompt = Path('/app/prompts/user_prompt.txt').read_text()
-    user_prompt = user_prompt.replace('{{DIFF_CONTENT}}', diff_content)
+    env = Environment(
+        loader=FileSystemLoader('/app/prompts'),
+        autoescape=False,
+        trim_blocks=True,
+        lstrip_blocks=True
+    )
+
+    user_context = {
+        'INPUT': dump_to_yaml({
+            'pr_title': title,
+            'pr_body': body,
+        }),
+        'DIFF': diff_string
+    }
+
+    user_template = env.get_template('user_prompt.txt')
+    user_prompt = user_template.render(**user_context)
+
+    if debug:
+        print(user_prompt)
 
     model = get_model(args.llm_model)
     prompt = supported_models[model]['prompt'](args.llm_model, system_prompt, user_prompt)
@@ -271,15 +289,19 @@ def extract_json(text):
 if __name__ == "__main__":
     args = parse_args()
 
-    diff = get_pr_diff(args.github_token)
-    diff_content = "\n".join(
+    g = Github(args.github_token)
+    repo = g.get_repo(github_repo)
+    pr_number = github_ref.split('/')[-2]
+    pr = repo.get_pull(int(pr_number))
+
+    diff = pr.get_files()
+
+    diff_string = "\n".join(
         help_llm(f) for f in diff if f.patch
     )
     debug = args.debug.lower() == 'true'
+
     add_review_resolution = args.add_review_resolution.lower() == 'true'
+    review_content = process_review(pr.title, pr.body, diff_string, args, debug)
 
-    if debug:
-        print(diff_content)
-
-    review_content = process_review(diff_content, args)
     publish_annotations(review_content, args.github_token, debug, args.llm_model, add_review_resolution)

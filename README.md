@@ -115,28 +115,46 @@ jobs:
 
 ## Author Customization
 
-The `author_customization` parameter allows you to customize the review behavior based on the PR author. This is useful for providing different types of feedback for team members with different experience levels or roles.
+The `author_customization` parameter allows you to customize the review behavior based on the PR author's GitHub username. This is useful for providing different types of feedback for team members with different experience levels or roles.
 
 ### Configuration Format
 
-The customization is provided as YAML with the following structure:
+The customization is provided as YAML using actual GitHub usernames:
 
 ```yaml
-username1:
+github_username1:
   prompt_addition: "Custom review guidance for this user"
-username2: "Simple string format also supported"
+github_username2: "Simple string format also supported"
 default:
   prompt_addition: "Default guidance for all other users"
 ```
 
 ### Example Configuration
 
+Here's an example for a team with 3 users where user1 and user2 get customized behavior, while user3 and any new users get the default:
+
 ```yaml
 author_customization: |
-  senior_engineer:
+  user1:
+    prompt_addition: "Use a more friendly manner since they're beginners. Give more examples and explanations to help them learn."
+  
+  user2:
+    prompt_addition: "Use a super formal tone and provide low-level grounding. Focus on technical precision and detailed analysis."
+  
+  default:
+    prompt_addition: "Standard review process with balanced feedback."
+```
+
+### Role-Based Example
+
+You can also organize by roles using GitHub usernames:
+
+```yaml
+author_customization: |
+  john_senior:
     prompt_addition: "Focus on architectural decisions and design patterns. This developer prefers concise, high-level feedback."
   
-  junior_developer:
+  alice_junior:
     prompt_addition: "Provide educational explanations and learning opportunities. Focus on best practices and code quality fundamentals."
   
   external_contributor:

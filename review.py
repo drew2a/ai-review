@@ -133,7 +133,11 @@ def process_review(title: str, body: Optional[str], diff_string, pr_author: str,
     customizations = parse_author_customization(args.author_customization)
     author_prompt_addition = get_author_specific_prompt_additions(pr_author, customizations)
     if author_prompt_addition:
-        system_prompt = f'{system_prompt}\n\n# Author-specific guidance:\n{author_prompt_addition}'
+        # Insert customization in the "## Addition" section
+        system_prompt = system_prompt.replace(
+            '## Addition\n',
+            f'## Addition\n{author_prompt_addition}\n'
+        )
 
     env = Environment(
         loader=FileSystemLoader('/app/prompts'),
@@ -296,11 +300,11 @@ def extract_json(text):
 
 def parse_author_customization(customization_yaml: str):
     """Parse the author customization YAML and return a dictionary."""
-    if not customization_yaml or not customization_yaml.strip():
+    if not customization_yaml:
         return {}
     
     try:
-        return yaml.safe_load(customization_yaml)
+        return yaml.safe_load(customization_yaml) or {}
     except yaml.YAMLError as e:
         print(f"Warning: Failed to parse author customization YAML: {e}")
         return {}
@@ -308,16 +312,8 @@ def parse_author_customization(customization_yaml: str):
 
 def get_author_specific_prompt_additions(pr_author: str, customizations: dict):
     """Get author-specific prompt additions based on customization rules."""
-    if not customizations or not pr_author:
-        return ""
-    
-    # Direct author match - only support string values
-    if pr_author in customizations:
-        author_config = customizations[pr_author]
-        if isinstance(author_config, str):
-            return author_config
-    
-    return ""
+    value = customizations.get(pr_author, '')
+    return value if isinstance(value, str) else ''
 
 
 if __name__ == "__main__":

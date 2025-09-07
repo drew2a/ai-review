@@ -133,7 +133,7 @@ def process_review(title: str, body: Optional[str], diff_string, pr_author: str,
     customizations = parse_author_customization(args.author_customization)
     author_prompt_addition = get_author_specific_prompt_additions(pr_author, customizations)
     if author_prompt_addition:
-        system_prompt += f"\n## Addition\n{author_prompt_addition}"
+        system_prompt += f"\n## Author Customization\n{author_prompt_addition}"
 
     env = Environment(
         loader=FileSystemLoader('/app/prompts'),
@@ -155,6 +155,7 @@ def process_review(title: str, body: Optional[str], diff_string, pr_author: str,
     user_prompt = user_template.render(**user_context)
 
     if debug:
+        print(system_prompt)
         print(user_prompt)
 
     model = get_model(args.llm_model)

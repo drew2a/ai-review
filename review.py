@@ -313,7 +313,7 @@ def parse_author_customization(customization_yaml: str):
 def get_author_specific_prompt_additions(pr_author: str, customizations: dict):
     """Get author-specific prompt additions based on customization rules."""
     value = customizations.get(pr_author, '')
-    return value if isinstance(value, str) else ''
+    return str(value)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+[project]
+name = "ai-code-review"
+version = "2.0.0"
+description = "AI Code Review Action"
+readme = "README.md"
+requires-python = "==3.13.*"
+dependencies = [
+    "Jinja2>=3.1.6",
+    "PyGithub>=2.6.1",
+    "litellm",
+    "pyyaml>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "diff-cover>=9.2.3",
+    "pytest-sugar>=1.1.1"
+]
+
+[tool.uv]
+package = true

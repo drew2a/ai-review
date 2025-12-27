@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import requests
+import litellm
 import yaml
 from github import File, Github
 from jinja2 import Environment, FileSystemLoader
@@ -17,84 +17,9 @@ HEADER = '# AI Review'
 github_ref = os.environ.get('GITHUB_REF')
 github_repo = os.environ.get('GITHUB_REPOSITORY')
 
-supported_models = {
-    '^gpt-4': {
-        'header': lambda key, version: {
-            'Authorization': f"Bearer {key}",  # for OpenAPI
-            "api-key": key,  # for Azure
-            'Api-Version': version,
-            'Content-Type': 'application/json'
-        },
-        'parse_json': lambda d: d['choices'][0]['message']['content'],
-        'prompt': lambda model, system_message, user_message: {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ]
-        },
-    },
-    '^o1': {
-        'header': lambda key, version: {
-            'Authorization': f"Bearer {key}",  # for OpenAPI
-            "api-key": key,  # for Azure
-            'Api-Version': version,
-            'Content-Type': 'application/json'
-        },
-        'parse_json': lambda d: d['choices'][0]['message']['content'],
-        'prompt': lambda model, system_message, user_message: {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": system_message},
-                {"role": "user", "content": user_message}
-            ]
-        },
-    },
-    '^claude-3': {
-        'header': lambda key, version: {
-            "x-api-key": key,
-            'anthropic-version': version,
-            'Content-Type': 'application/json'
-        },
-        'parse_json': lambda d: d['content'][0]['text'],
-        'prompt': lambda model, system_message, user_message: {
-            "model": model,
-            "system": system_message,
-            'max_tokens': 1024,
-            "messages": [
-                {"role": "user", "content": user_message}
-            ]
-        },
-    },
-    '^gemini-2': {
-        'header': lambda key, version: {
-            'x-goog-api-key': key,
-            'Content-Type': 'application/json'
-        },
-        'parse_json': lambda d: (
-            d['candidates'][0]['content']['parts'][0]['text']
-        ),
-        'prompt': lambda model, system_message, user_message: {
-            "system_instruction": {
-                "parts": [{"text": system_message}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_message}]
-                }
-            ]
-        },
-    }
-}
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='AI Code Review Action')
-    parser.add_argument('api_endpoint', type=str, help='LLM API endpoint')
-    parser.add_argument('api_key', type=str, help='LLM API key')
-    parser.add_argument('api_version', type=str, help='API version')
-    parser.add_argument('llm_model', type=str, help='LLM model name')
     parser.add_argument('github_token', type=str, help='GitHub Token')
     parser.add_argument('debug', type=str, help='Debug mode')
     parser.add_argument('add_review_resolution', type=str, help='Add review resolution')
@@ -102,13 +27,6 @@ def parse_args():
     parser.add_argument('author_customization', type=str, help='Author customization YAML')
 
     return parser.parse_args()
-
-
-def get_model(pattern):
-    """ Return the model name that matches the pattern. """
-    if m := next((m for m in supported_models if re.match(m, pattern)), None):
-        return m
-    raise ValueError(f'Unsupported model pattern: {pattern}. Supported patterns are: {list(supported_models.keys())}')
 
 
 def dump_to_yaml(data: dict | list[dict] | None) -> str:
@@ -158,16 +76,20 @@ def process_review(title: str, body: Optional[str], diff_string, pr_author: str,
         print(system_prompt)
         print(user_prompt)
 
-    model = get_model(args.llm_model)
-    prompt = supported_models[model]['prompt'](args.llm_model, system_prompt, user_prompt)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
 
-    response = requests.post(
-        args.api_endpoint,
-        headers=supported_models[model]['header'](args.api_key, args.api_version),
-        json=prompt
+    llm_model = os.environ.get('LLM_MODEL')
+
+    # litellm handles api_key, base_url, api_version from env vars automatically
+    response = litellm.completion(
+        model=llm_model,
+        messages=messages
     )
-    response.raise_for_status()
-    return supported_models[model]['parse_json'](response.json())
+
+    return response.choices[0].message.content
 
 
 def publish_annotations(summary_content, github_token, debug, llm_model, add_review_resolution):
@@ -334,4 +256,5 @@ if __name__ == "__main__":
     add_review_resolution = args.add_review_resolution.lower() == 'true'
     review_content = process_review(pr.title, pr.body, diff_string, pr_author, args, debug)
 
-    publish_annotations(review_content, args.github_token, debug, args.llm_model, add_review_resolution)
+    llm_model = os.environ.get('LLM_MODEL')
+    publish_annotations(review_content, args.github_token, debug, llm_model, add_review_resolution)

@@ -12,28 +12,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      - run: pip install -r requirements-test.txt
-      - run: echo "PYTHONPATH=.:$PYTHONPATH" >> $GITHUB_ENV
+          enable-cache: true
+          cache-python: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras --dev
 
       - name: Run Tests
         run: |
-          pytest \
-            --cov \
+          uv run pytest \
+            --cov=src/ai_review \
             --cov-report=xml \
             --cov-report=term-missing
 
       - name: Compare coverage (optional)
         if: ${{ github.event_name == 'pull_request' }}
         run: |
-          diff-cover coverage.xml \
+          uv run diff-cover coverage.xml \
             --compare-branch=origin/main \
             --json-report=diff_coverage.json \
             --fail-under=80

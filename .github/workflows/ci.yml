@@ -9,14 +9,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: ./
+        env:
+          LLM_MODEL: gemini/gemini-2.5-flash
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
-          api_endpoint: ${{ secrets.GEMINI_LLM_ENDPOINT }}
-          api_key: ${{ secrets.GEMINI_LLM_API_KEY }}
-#          api_version: ${{ secrets.ANTHROPIC_LLM_API_VERSION }}
-          llm_model: ${{ secrets.GEMINI_LLM_MODEL }}
-
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
           debug: true
           add_review_resolution: false
           add_joke: true

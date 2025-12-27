@@ -14,15 +14,19 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 - Optional review resolution statuses (e.g., "APPROVE", "REQUEST_CHANGES", "COMMENT")
 - Debug mode for enhanced logging
 
-## Supported models:
+## Supported models
 
-- gpt-4o
-- o1
-- claude-3-7-sonnet
-- claude-3-5-sonnet
-- gemini-2.0-flash
-- gemini-2.5-flash
-- gemini-2.5-pro
+This action uses [LiteLLM](https://docs.litellm.ai/docs/providers), so it supports **100+ LLMs** including:
+
+- **OpenAI** (GPT-4o, o1, etc.)
+- **Anthropic** (Claude 3.5 Sonnet, Claude 3.7 Sonnet, etc.)
+- **Google VertexAI / Gemini** (Gemini 1.5 Pro, Gemini 2.0 Flash, etc.)
+- **Azure OpenAI**
+- **HuggingFace**
+- **Ollama**
+- ... and many more.
+
+See the [LiteLLM Providers documentation](https://docs.litellm.ai/docs/providers) for the full list of supported models and the required environment variables for each provider.
 
 ### My (Subjective) Review of the Particular Models
 
@@ -47,15 +51,25 @@ So, based on this **(highly unscientific) scale**:
 
 | Name                    | Description                                               | Required | Default              |
 |-------------------------|-----------------------------------------------------------|----------|----------------------|
-| `api_endpoint`          | LLM API endpoint                                          | true     | -                    |
-| `api_key`               | LLM API key                                               | true     | -                    |
-| `api_version`           | LLM API version                                           | false    | `2023-12-01-preview` |
-| `llm_model`             | LLM Model used for review                                 | false    | `gpt-4o`             |
+| `github_token`          | GitHub token for authentication                           | true     | -                    |
 | `debug`                 | Enable debug mode (true/false)                            | false    | `false`              |
 | `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
 | `add_joke`              | Add a joke to the review comment                          | false    | `false`              |
 | `author_customization`  | YAML configuration for customizing reviews based on PR author | false | -                    |
-| `github_token`          | GitHub token for authentication                           | true     | -                    |
+
+## Environment Variables
+
+The action relies on environment variables for LLM configuration, handled by [litellm](https://docs.litellm.ai/docs/).
+
+| Name | Description | Required |
+|------|-------------|----------|
+| `LLM_MODEL` | The model name to use (e.g. `gpt-4o`, `claude-3-5-sonnet`, `gemini/gemini-1.5-pro`) | Yes |
+| `OPENAI_API_KEY` | API Key for OpenAI (if using OpenAI models) | Conditional |
+| `ANTHROPIC_API_KEY` | API Key for Anthropic (if using Claude models) | Conditional |
+| `GEMINI_API_KEY` | API Key for Google Gemini (if using Gemini models) | Conditional |
+| `OPENAI_API_BASE` | Custom API endpoint (if needed) | Optional |
+
+*Note: Check the [LiteLLM documentation](https://docs.litellm.ai/docs/providers) for the specific environment variables required for your chosen provider.*
 
 ## Usage
 
@@ -63,14 +77,11 @@ To use this action in your GitHub workflow, add the following step:
 
 ```yaml
 - uses: drew2a/ai-review@v1
+  env:
+    LLM_MODEL: gpt-4o
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   with:
-    api_endpoint: ${{ secrets.LLM_ENDPOINT }}
-    api_key: ${{ secrets.LLM_API_KEY }}
-    api_version: ${{ secrets.LLM_API_VERSION }}
-    llm_model: ${{ secrets.LLM_MODEL }}
-
     github_token: ${{ secrets.GITHUB_TOKEN }}
-
     debug: false
     add_review_resolution: false
     add_joke: false
@@ -96,14 +107,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: drew2a/ai-review@v1
+        env:
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Add other env vars required by litellm for your specific provider
         with:
-          api_endpoint: ${{ secrets.LLM_ENDPOINT }}
-          api_key: ${{ secrets.LLM_API_KEY }}
-          api_version: ${{ secrets.LLM_API_VERSION }}
-          llm_model: ${{ secrets.LLM_MODEL }}
-
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
           debug: true
           add_review_resolution: false
           add_joke: false

@@ -18,7 +18,7 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 
 This action uses [LiteLLM](https://docs.litellm.ai/docs/providers), so it supports **100+ LLMs** including:
 
-- **OpenAI** (GPT-4o, o1, etc.)
+- **OpenAI** (GPT-5.4, GPT-4o, o1, etc.)
 - **Anthropic** (Claude 3.5 Sonnet, Claude 3.7 Sonnet, etc.)
 - **Google VertexAI / Gemini** (Gemini 1.5 Pro, Gemini 2.0 Flash, etc.)
 - **Azure OpenAI**
@@ -63,7 +63,7 @@ The action relies on environment variables for LLM configuration, handled by [li
 
 | Name | Description | Required |
 |------|-------------|----------|
-| `LLM_MODEL` | The model name to use (e.g. `gpt-4o`, `claude-3-5-sonnet`, `gemini/gemini-1.5-pro`) | Yes |
+| `LLM_MODEL` | The model name to use (e.g. `gpt-5.4`, `claude-3-5-sonnet`, `gemini/gemini-1.5-pro`) | Yes |
 | `OPENAI_API_KEY` | API Key for OpenAI (if using OpenAI models) | Conditional |
 | `ANTHROPIC_API_KEY` | API Key for Anthropic (if using Claude models) | Conditional |
 | `GEMINI_API_KEY` | API Key for Google Gemini (if using Gemini models) | Conditional |

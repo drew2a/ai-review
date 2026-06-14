@@ -1,13 +1,23 @@
 import argparse
+import json
 import os
+import runpy
 from pathlib import Path
 from unittest import mock
 from unittest.mock import Mock, patch
 
 from jinja2 import Environment
 
-from ai_review.review import extract_json, get_author_specific_prompt_additions, parse_author_customization, \
-    process_review
+from ai_review.review import (
+    dump_to_yaml,
+    extract_json,
+    get_author_specific_prompt_additions,
+    help_llm,
+    parse_args,
+    parse_author_customization,
+    process_review,
+    publish_annotations,
+)
 
 
 @patch.object(Path, 'read_text', Mock(return_value='prompt'))
@@ -127,3 +137,288 @@ def test_get_author_specific_prompt_additions_empty():
     assert get_author_specific_prompt_additions('', {}) == ""
     assert get_author_specific_prompt_additions('user', {}) == ""
     assert get_author_specific_prompt_additions('', {'user': 'test'}) == ""
+
+
+def test_parse_args():
+    with patch('sys.argv', ['review.py', 'gh_token', 'false', 'false', 'false', 'custom']):
+        args = parse_args()
+    assert args.github_token == 'gh_token'
+    assert args.debug == 'false'
+    assert args.add_review_resolution == 'false'
+    assert args.add_joke == 'false'
+    assert args.author_customization == 'custom'
+
+
+def test_dump_to_yaml_empty():
+    assert dump_to_yaml(None) == ''
+    assert dump_to_yaml({}) == ''
+    assert dump_to_yaml([]) == ''
+
+
+def test_dump_to_yaml_with_data():
+    result = dump_to_yaml({'key': 'value'})
+    assert '```yaml' in result
+    assert 'key: value' in result
+    assert result.endswith('```')
+
+
+@patch.object(Path, 'read_text', Mock(return_value='system prompt'))
+@patch.object(Environment, 'get_template', Mock(return_value=Mock(render=Mock(return_value='user_prompt'))))
+@patch('litellm.completion')
+def test_process_review_with_author_customization(mock_completion):
+    args = argparse.Namespace(
+        github_token='gh_token',
+        debug='false',
+        add_review_resolution='false',
+        add_joke='false',
+        author_customization='testuser: "Be thorough"',
+    )
+    mock_response = mock.Mock()
+    mock_response.choices = [mock.Mock(message=mock.Mock(content='Review content'))]
+    mock_completion.return_value = mock_response
+
+    with patch.dict(os.environ, {'LLM_MODEL': 'gpt-4o'}):
+        result = process_review('title', 'body', 'diff', 'testuser', args, False)
+
+    assert result == 'Review content'
+    system_prompt = mock_completion.call_args[1]['messages'][0]['content']
+    assert 'Author Customization' in system_prompt
+
+
+@patch.object(Path, 'read_text', Mock(return_value='system prompt'))
+@patch.object(Environment, 'get_template', Mock(return_value=Mock(render=Mock(return_value='user_prompt'))))
+@patch('litellm.completion')
+def test_process_review_debug(mock_completion):
+    args = argparse.Namespace(
+        github_token='gh_token',
+        debug='false',
+        add_review_resolution='false',
+        add_joke='false',
+        author_customization='',
+    )
+    mock_response = mock.Mock()
+    mock_response.choices = [mock.Mock(message=mock.Mock(content='Review'))]
+    mock_completion.return_value = mock_response
+
+    with patch.dict(os.environ, {'LLM_MODEL': 'gpt-4o'}):
+        result = process_review('title', 'body', 'diff', 'author', args, True)
+
+    assert result == 'Review'
+
+
+def test_help_llm_basic():
+    mock_file = Mock()
+    mock_file.filename = 'test.py'
+    mock_file.patch = '@@ -1,3 +1,3 @@\n context\n+added\n-removed'
+
+    result = help_llm(mock_file)
+
+    assert 'Filename: test.py' in result
+    assert 'Patch:' in result
+    assert '1:  context' in result
+    assert '2: +added' in result
+    assert '-removed' in result
+
+
+def test_help_llm_line_before_hunk_header():
+    """Lines with + or space before any @@ header: current_line_number is None."""
+    mock_file = Mock()
+    mock_file.filename = 'test.py'
+    mock_file.patch = '+added line without hunk header'
+
+    result = help_llm(mock_file)
+    assert '   ? : +added line without hunk header' in result
+
+
+def test_help_llm_other_line():
+    """Lines not starting with @@, space, +, or - go to the else branch."""
+    mock_file = Mock()
+    mock_file.filename = 'test.py'
+    mock_file.patch = '@@ -1 +1 @@\n\\ No newline at end of file'
+
+    result = help_llm(mock_file)
+    assert '\\ No newline at end of file' in result
+
+
+def _make_github_mock():
+    mock_github_instance = Mock()
+    mock_repo = Mock()
+    mock_pr = Mock()
+    mock_pr.get_issue_comments.return_value = []
+    mock_github_instance.get_repo.return_value = mock_repo
+    mock_repo.get_pull.return_value = mock_pr
+    return mock_github_instance, mock_pr
+
+
+_GITHUB_REF = 'refs/pull/1/merge'
+_GITHUB_REPO = 'owner/repo'
+
+
+def test_publish_annotations_debug(capsys):
+    mock_gh, mock_pr = _make_github_mock()
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations('Human summary', 'token', True, 'gpt-4o', False)
+
+    out = capsys.readouterr().out
+    assert 'Human summary' in out
+    call_arg = mock_pr.create_issue_comment.call_args[0][0]
+    assert 'gpt-4o' in call_arg
+
+
+def test_publish_annotations_with_marker_and_annotations(capsys):
+    annotations = [{"file": "foo.py", "line": 10, "message": "Issue here"}]
+    tech_info = json.dumps({"annotations": annotations})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', False)
+
+    out = capsys.readouterr().out
+    assert '::warning file=foo.py,line=10::Issue here' in out
+    mock_pr.create_issue_comment.assert_called_once()
+
+
+def test_publish_annotations_without_marker():
+    mock_gh, mock_pr = _make_github_mock()
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations('Just a human summary', 'token', False, 'gpt-4o', False)
+
+    mock_pr.create_issue_comment.assert_called_once()
+
+
+def test_publish_annotations_invalid_annotations_json(capsys):
+    content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', False)
+
+    assert 'Error parsing technical information JSON (annotations)' in capsys.readouterr().out
+
+
+def test_publish_annotations_deletes_old_bot_comments():
+    mock_gh, mock_pr = _make_github_mock()
+    bot_comment = Mock()
+    bot_comment.user.login = 'github-actions[bot]'
+    bot_comment.body = '# AI Review\n\nOld content'
+    other_comment = Mock()
+    other_comment.user.login = 'someuser'
+    other_comment.body = '# AI Review'
+    mock_pr.get_issue_comments.return_value = [bot_comment, other_comment]
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations('New review', 'token', False, 'gpt-4o', False)
+
+    bot_comment.delete.assert_called_once()
+    other_comment.delete.assert_not_called()
+
+
+def test_publish_annotations_empty_summary():
+    """When there is no text before the marker, human_summary is empty."""
+    tech_info = json.dumps({"annotations": []})
+    content = f'### TECHNICAL INFORMATION\n{tech_info}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', False)
+
+    mock_pr.create_issue_comment.assert_not_called()
+
+
+def test_publish_annotations_with_valid_review_resolution():
+    tech_info = json.dumps({"annotations": [], "review": {"resolution": "APPROVE", "review_message": "LGTM"}})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', True)
+
+    mock_pr.create_review.assert_called_once_with(body='LGTM', event='APPROVE')
+
+
+def test_publish_annotations_with_invalid_review_resolution(capsys):
+    tech_info = json.dumps({"annotations": [], "review": {"resolution": "UNKNOWN", "review_message": ""}})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', True)
+
+    assert "Unknown resolution 'UNKNOWN'" in capsys.readouterr().out
+    mock_pr.create_review.assert_not_called()
+
+
+def test_publish_annotations_no_review_data():
+    """When technical info has no 'review' key, create_review is not called."""
+    tech_info = json.dumps({"annotations": []})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', True)
+
+    mock_pr.create_review.assert_not_called()
+
+
+def test_publish_annotations_invalid_review_json(capsys):
+    content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
+    mock_gh, mock_pr = _make_github_mock()
+
+    with patch('ai_review.review.Github', return_value=mock_gh), \
+         patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_repo', _GITHUB_REPO):
+        publish_annotations(content, 'token', False, 'gpt-4o', True)
+
+    assert 'Error parsing technical information JSON (review)' in capsys.readouterr().out
+
+
+def test_main_block():
+    mock_github_instance = Mock()
+    mock_repo = Mock()
+    mock_pr = Mock()
+    mock_pr.title = 'Test PR'
+    mock_pr.body = 'Test body'
+    mock_pr.user = Mock(login='testuser')
+    mock_file = Mock()
+    mock_file.patch = '@@ -1,2 +1,2 @@\n context\n+added'
+    mock_file.filename = 'test.py'
+    mock_pr.get_files.return_value = [mock_file]
+    mock_pr.get_issue_comments.return_value = []
+    mock_github_instance.get_repo.return_value = mock_repo
+    mock_repo.get_pull.return_value = mock_pr
+
+    mock_response = Mock()
+    mock_response.choices = [Mock(message=Mock(content='Review content'))]
+
+    with patch('sys.argv', ['review.py', 'gh_token', 'false', 'false', 'false', '']), \
+         patch.dict(os.environ, {
+             'GITHUB_REF': 'refs/pull/1/merge',
+             'GITHUB_REPOSITORY': 'owner/repo',
+             'LLM_MODEL': 'gpt-4o',
+         }), \
+         patch('github.Github', return_value=mock_github_instance), \
+         patch('litellm.completion', return_value=mock_response), \
+         patch('pathlib.Path.read_text', return_value='system prompt'), \
+         patch.object(Environment, 'get_template', return_value=Mock(render=Mock(return_value='user prompt'))):
+        runpy.run_module('ai_review.review', run_name='__main__')
+
+    mock_pr.create_issue_comment.assert_called()

@@ -47,6 +47,7 @@ So, based on this **(highly unscientific) scale**:
 - **claude-3-7-sonnet** → **6**
 - **gemini-2.0-flash** → **2**
 - **gemini-2.5-pro** → **3**
+- **gpt-5.6-terra** → **7**
 
 ## Inputs
 

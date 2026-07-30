@@ -8,7 +8,8 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 
 - Automatically reviews pull request changes using AI
 - Provides detailed code suggestions and improvements
-- Adds review comments directly to the PR
+- Posts real review comments attached to the changed lines, plus a summary comment on the PR
+- Remembers its own previous comments, so re-running the review does not repeat them
 - Takes the existing PR discussion into account (see [Discussion Context](#discussion-context))
 - Works with any programming language
 - Supports different AI models and API endpoints
@@ -125,10 +126,12 @@ jobs:
 Besides the title, description and diff, the review is given the discussion that already happened on
 the PR, so it can build on it instead of repeating it. Two things are collected:
 
-1. **PR conversation comments** — the comments on the PR itself. Reviews previously posted by this
-   action are skipped, so the model is never fed its own output.
+1. **PR conversation comments** — the comments on the PR itself. Summaries previously posted by
+   this action are skipped, because they are replaced by the new summary anyway.
 2. **Review comments on the code** — the comments attached to specific lines. Replies are chained
-   into threads, so the whole discussion about one place in the code stays together.
+   into threads, so the whole discussion about one place in the code stays together. Comments the
+   action itself left on previous runs are included on purpose: the model is told they are its own,
+   which keeps it from repeating them.
 
 Each thread is passed with the location it points to, the code it was written against and a link:
 
@@ -151,8 +154,9 @@ Each thread is passed with the location it points to, the code it was written ag
 ```
 
 `side` tells whether the lines refer to the new (`RIGHT`) or the old (`LEFT`) version of the file. A
-thread whose code has fallen out of the diff is marked with `outdated: true`, and its line numbers
-then refer to an older version of the file.
+thread whose code has fallen out of the diff (for example because the author pushed a fix) is
+considered outdated and is left out of the context, since its line numbers would refer to an older
+version of the file.
 
 This needs no configuration, but note that the action reads the comments through the same
 `github_token`, so the token needs read access to the pull request (the `pull-requests: write`

@@ -6,11 +6,14 @@ from pathlib import Path
 
 import litellm
 import yaml
-from github import File, Github
+from github import File, Github, GithubException
 from jinja2 import Environment, FileSystemLoader
 
 GITHUB_ACTIONS_BOT = 'github-actions[bot]'
 HEADER = '# AI Review'
+REVIEW_RESOLUTIONS = ('APPROVE', 'REQUEST_CHANGES', 'COMMENT')
+
+HUNK_HEADER_RE = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
 
 # Environment variables set by GitHub Actions
 github_ref = os.environ.get('GITHUB_REF')
@@ -78,20 +81,14 @@ def describe_comment_location(comment) -> dict:
     Describe which lines of which file a review comment points to.
 
     `line` is the last line of the commented range and `start_line` the first one, both in the new
-    version of the file unless `side` is LEFT. GitHub sets them to None once the commented code
-    falls out of the diff, leaving only the `original_*` values.
+    version of the file unless `side` is LEFT.
     """
-    line = comment.line if comment.line is not None else comment.original_line
-    start_line = comment.start_line if comment.start_line is not None else comment.original_start_line
-
     location = {'file': comment.path}
-    if start_line and start_line != line:
-        location['lines'] = f'{start_line}-{line}'
+    if comment.start_line and comment.start_line != comment.line:
+        location['lines'] = f'{comment.start_line}-{comment.line}'
     else:
-        location['line'] = line
+        location['line'] = comment.line
     location['side'] = comment.side or 'RIGHT'
-    if comment.line is None:
-        location['outdated'] = True
 
     return location
 
@@ -103,9 +100,14 @@ def collect_review_comments(pr) -> list[dict]:
     Replies are chained under the comment that started the thread, so the discussion of a single
     place in the code stays together. Each thread also carries the `diff_hunk` it was written
     against, because a comment is only meaningful together with the code it points to.
+
+    Threads on code that is no longer part of the diff (GitHub clears their `line`) are dropped:
+    their line numbers refer to an older version of the file, so they would only mislead the LLM
+    about the current state of the code.
     """
     threads: dict[int, dict] = {}
     root_ids: dict[int, int] = {}
+    outdated_roots: set[int] = set()
 
     for comment in pr.get_review_comments():
         parent_id = comment.in_reply_to_id
@@ -113,8 +115,14 @@ def collect_review_comments(pr) -> list[dict]:
         root_id = root_ids.get(parent_id, parent_id) if parent_id else comment.id
         root_ids[comment.id] = root_id
 
+        if root_id in outdated_roots:
+            continue
+
         thread = threads.get(root_id)
         if thread is None:
+            if comment.line is None:
+                outdated_roots.add(root_id)
+                continue
             thread = threads[root_id] = {
                 **describe_comment_location(comment),
                 'url': comment.html_url,
@@ -188,7 +196,57 @@ def process_review(title: str, body: str | None, diff_string, pr_author: str, ar
     return response.choices[0].message.content
 
 
-def publish_annotations(summary_content, github_token, debug, llm_model, add_review_resolution):
+def collect_commentable_lines(diff_files) -> dict[str, set[int]]:
+    """
+    Map each file of the diff to the line numbers a review comment can be attached to.
+
+    Those are the lines of the new version of the file that appear in the diff: added lines and
+    unchanged context lines. GitHub rejects a review whose comment points anywhere else.
+    """
+    commentable: dict[str, set[int]] = {}
+
+    for diff_file in diff_files:
+        lines = commentable.setdefault(diff_file.filename, set())
+        if not diff_file.patch:
+            continue
+        current_line_number = None
+        for line in diff_file.patch.splitlines():
+            match = HUNK_HEADER_RE.match(line)
+            if match:
+                current_line_number = int(match.group(1))
+            elif line.startswith((' ', '+')) and current_line_number is not None:
+                lines.add(current_line_number)
+                current_line_number += 1
+
+    return commentable
+
+
+def build_inline_comments(comments: list[dict], commentable_lines: dict[str, set[int]]) -> list[dict]:
+    """
+    Convert the comments of the LLM output into GitHub review comments.
+
+    A comment that does not point at a commentable line of the diff is dropped, because a single
+    misplaced comment would make GitHub reject the whole review.
+    """
+    inline_comments = []
+    for comment in comments:
+        filename = comment.get('file')
+        message = comment.get('message')
+        try:
+            line = int(comment.get('line'))
+        except (TypeError, ValueError):
+            line = None
+
+        if not filename or not message or line not in commentable_lines.get(filename, set()):
+            print(f'Skipping comment that does not point at the diff: {comment}')
+            continue
+
+        inline_comments.append({'path': filename, 'line': line, 'side': 'RIGHT', 'body': message})
+
+    return inline_comments
+
+
+def publish_review(summary_content, github_token, debug, llm_model, add_review_resolution):
     """
     Splits the LLM response into two parts:
       1. The human-readable summary (before the marker).
@@ -196,7 +254,7 @@ def publish_annotations(summary_content, github_token, debug, llm_model, add_rev
 
     The technical information must be a JSON block with the following structure:
     {
-      "annotations": [ ... ],
+      "comments": [ {"file": "<path>", "line": <line>, "message": "<markdown>"}, ... ],
       "review": {
           "resolution": "<APPROVE|REQUEST_CHANGES|COMMENT>",
           "review_message": "<review text>"
@@ -204,9 +262,12 @@ def publish_annotations(summary_content, github_token, debug, llm_model, add_rev
     }
 
     The function then:
-      - Prints annotations in the format ::warning file={filename},line={line}::{message}
-      - Posts an issue comment with the summary in the PR.
-      - If a review block is present, submits a PR review via the GitHub API.
+      - Replaces the previous summary comment of this action with one holding the new summary.
+      - Submits a single PR review whose inline comments are the "comments" entries. The review
+        keeps the neutral COMMENT event unless add_review_resolution is on and the "review" block
+        carries a valid resolution. Inline comments of previous runs are left in place on purpose:
+        they are collected as context on the next run, which is what keeps the review from
+        repeating itself.
     """
     if debug:
         print(summary_content)
@@ -220,30 +281,21 @@ def publish_annotations(summary_content, github_token, debug, llm_model, add_rev
         human_summary = summary_content
         technical_info_str = None
 
-    # Process the JSON block with technical information (annotations)
+    tech_info = {}
     technical_info_str = extract_json(technical_info_str)
     if technical_info_str:
         try:
             tech_info = json.loads(technical_info_str)
-            annotations = tech_info.get("annotations", [])
-            for annotation in annotations:
-                filename = annotation.get("file")
-                line = annotation.get("line")
-                message = annotation.get("message")
-                output_line = f"::warning file={filename},line={line}::{message}"
-                print(output_line)
         except json.JSONDecodeError as e:
-            print("Error parsing technical information JSON (annotations):", e)
+            print("Error parsing technical information JSON:", e)
 
-    # Post a PR comment with the human-readable summary
     g = Github(github_token)
     repo = g.get_repo(github_repo)
     pr_number = int(github_ref.split('/')[-2])
     pr = repo.get_pull(pr_number)
 
-    # Delete previous comments from GitHub Actions that include the HEADER
+    # Delete previous summary comments from GitHub Actions that include the HEADER
     for comment in pr.get_issue_comments():
-        print(comment.user.login)
         if is_previous_ai_review(comment):
             comment.delete()
 
@@ -254,21 +306,27 @@ def publish_annotations(summary_content, github_token, debug, llm_model, add_rev
 
         pr.create_issue_comment(comment)
 
-    # If a review block is present, submit a PR review via the GitHub API
-    if technical_info_str and add_review_resolution:
+    comments = tech_info.get('comments') or tech_info.get('annotations') or []
+    inline_comments = build_inline_comments(comments, collect_commentable_lines(pr.get_files()))
+
+    review_data = tech_info.get('review') or {}
+    resolution = review_data.get('resolution')
+    review_message = review_data.get('review_message', '')
+
+    event = 'COMMENT'
+    body = ''
+    if add_review_resolution:
+        if resolution in REVIEW_RESOLUTIONS:
+            event = resolution
+            body = review_message
+        else:
+            print(f"Unknown resolution '{resolution}' in review JSON. Falling back to COMMENT.")
+
+    if inline_comments or body:
         try:
-            tech_info = json.loads(technical_info_str)
-            review_data = tech_info.get("review")
-            if review_data:
-                resolution = review_data.get("resolution")
-                review_message = review_data.get("review_message", "")
-                # Validate the resolution value
-                if resolution not in ["APPROVE", "REQUEST_CHANGES", "COMMENT"]:
-                    print(f"Unknown resolution '{resolution}' in review JSON. Skipping PR review.")
-                else:
-                    pr.create_review(body=review_message, event=resolution)
-        except json.JSONDecodeError as e:
-            print("Error parsing technical information JSON (review):", e)
+            pr.create_review(body=body, event=event, comments=inline_comments)
+        except GithubException as e:
+            print("Error submitting the PR review:", e)
 
 
 def help_llm(diff_file: File):
@@ -284,10 +342,9 @@ def help_llm(diff_file: File):
         "```"
     ]
     current_line_number = None
-    hunk_header_re = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
 
     for line in lines:
-        match = hunk_header_re.match(line)
+        match = HUNK_HEADER_RE.match(line)
         if match:
             current_line_number = int(match.group(1))
             output_lines.append(line)
@@ -357,4 +414,4 @@ if __name__ == "__main__":
                                     pr_comments=pr_comments, review_comments=review_comments)
 
     llm_model = os.environ.get('LLM_MODEL')
-    publish_annotations(review_content, args.github_token, debug, llm_model, add_review_resolution)
+    publish_review(review_content, args.github_token, debug, llm_model, add_review_resolution)

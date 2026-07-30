@@ -637,6 +637,16 @@ def test_publish_review_with_valid_resolution():
     mock_pr.create_review.assert_called_once_with(body='LGTM', event='APPROVE', comments=[])
 
 
+def test_publish_review_bodyless_approve_is_submitted():
+    """GitHub accepts an APPROVE review without a body, so the resolution is not dropped."""
+    tech_info = json.dumps({"comments": [], "review": {"resolution": "APPROVE", "review_message": ""}})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+
+    mock_pr = _publish(content, add_review_resolution=True)
+
+    mock_pr.create_review.assert_called_once_with(body='', event='APPROVE', comments=[])
+
+
 def test_publish_review_with_invalid_resolution(capsys):
     tech_info = json.dumps({"comments": [], "review": {"resolution": "UNKNOWN", "review_message": ""}})
     content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'

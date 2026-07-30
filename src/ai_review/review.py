@@ -322,7 +322,9 @@ def publish_review(summary_content, github_token, debug, llm_model, add_review_r
         else:
             print(f"Unknown resolution '{resolution}' in review JSON. Falling back to COMMENT.")
 
-    if inline_comments or body:
+    # An empty APPROVE review is still submitted: unlike the other events, GitHub accepts it
+    # without a body, and dropping it would lose the resolution.
+    if inline_comments or body or event == 'APPROVE':
         try:
             pr.create_review(body=body, event=event, comments=inline_comments)
         except GithubException as e:

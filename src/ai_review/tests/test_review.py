@@ -9,10 +9,14 @@ from unittest.mock import Mock, patch
 from jinja2 import Environment
 
 from ai_review.review import (
+    collect_pr_comments,
+    collect_review_comments,
+    describe_comment_location,
     dump_to_yaml,
     extract_json,
     get_author_specific_prompt_additions,
     help_llm,
+    is_previous_ai_review,
     parse_args,
     parse_author_customization,
     process_review,
@@ -155,6 +159,13 @@ def test_dump_to_yaml_empty():
     assert dump_to_yaml([]) == ''
 
 
+def test_dump_to_yaml_multiline_string_as_block():
+    """Multi-line strings are dumped as literal blocks instead of folded quoted scalars."""
+    result = dump_to_yaml({'diff_hunk': '@@ -5,3 +5,4 @@\n-old\n+new'})
+
+    assert result == '```yaml\ndiff_hunk: |-\n  @@ -5,3 +5,4 @@\n  -old\n  +new\n```'
+
+
 def test_dump_to_yaml_with_data():
     result = dump_to_yaml({'key': 'value'})
     assert '```yaml' in result
@@ -240,6 +251,211 @@ def test_help_llm_other_line():
     assert '\\ No newline at end of file' in result
 
 
+def _issue_comment(author: str, body: str, created_at: str = '2026-01-01 10:00:00'):
+    comment = Mock()
+    comment.user = Mock(login=author)
+    comment.body = body
+    comment.created_at = created_at
+    return comment
+
+
+def _review_comment(comment_id: int, author: str, body: str, path: str = 'foo.py', line: int = 10,
+                    start_line=None, side: str = 'RIGHT', in_reply_to_id=None,
+                    original_line: int = 7, original_start_line=None):
+    comment = Mock()
+    comment.id = comment_id
+    comment.user = Mock(login=author)
+    comment.body = body
+    comment.created_at = '2026-01-01 10:00:00'
+    comment.path = path
+    comment.line = line
+    comment.start_line = start_line
+    comment.original_line = original_line
+    comment.original_start_line = original_start_line
+    comment.side = side
+    comment.in_reply_to_id = in_reply_to_id
+    comment.diff_hunk = '@@ -1,2 +1,2 @@\n-old\n+new'
+    comment.html_url = f'https://github.com/owner/repo/pull/1#discussion_r{comment_id}'
+    return comment
+
+
+def test_is_previous_ai_review():
+    assert is_previous_ai_review(_issue_comment('github-actions[bot]', '# AI Review\n\nsummary'))
+    assert not is_previous_ai_review(_issue_comment('someuser', '# AI Review\n\nsummary'))
+    assert not is_previous_ai_review(_issue_comment('github-actions[bot]', 'unrelated bot output'))
+
+
+def test_is_previous_ai_review_without_body_or_user():
+    assert not is_previous_ai_review(_issue_comment('github-actions[bot]', None))
+
+    comment = _issue_comment('github-actions[bot]', '# AI Review')
+    comment.user = None
+    assert not is_previous_ai_review(comment)
+
+
+def test_collect_pr_comments():
+    pr = Mock()
+    pr.get_issue_comments.return_value = [
+        _issue_comment('alice', 'Please rename this', '2026-01-01 10:00:00'),
+        _issue_comment('github-actions[bot]', '# AI Review\n\nprevious review'),
+        _issue_comment('bob', 'Agreed, renamed', '2026-01-02 11:00:00'),
+    ]
+
+    assert collect_pr_comments(pr) == [
+        {'author': 'alice', 'created_at': '2026-01-01 10:00:00', 'body': 'Please rename this'},
+        {'author': 'bob', 'created_at': '2026-01-02 11:00:00', 'body': 'Agreed, renamed'},
+    ]
+
+
+def test_collect_pr_comments_empty():
+    pr = Mock()
+    pr.get_issue_comments.return_value = []
+    assert collect_pr_comments(pr) == []
+
+
+def test_collect_pr_comments_without_user():
+    pr = Mock()
+    comment = _issue_comment('alice', 'orphaned comment')
+    comment.user = None
+    pr.get_issue_comments.return_value = [comment]
+
+    assert collect_pr_comments(pr) == [
+        {'author': '', 'created_at': '2026-01-01 10:00:00', 'body': 'orphaned comment'},
+    ]
+
+
+def test_collect_review_comments_chains_replies_into_threads():
+    pr = Mock()
+    pr.get_review_comments.return_value = [
+        _review_comment(1, 'alice', 'This can overflow'),
+        _review_comment(2, 'bob', 'Good catch', in_reply_to_id=1),
+        # A reply to a reply: GitHub may point it at the previous reply, not at the thread root.
+        _review_comment(3, 'alice', 'Fixed in the last commit', in_reply_to_id=2),
+        _review_comment(4, 'carol', 'Unrelated place', path='bar.py', line=42),
+    ]
+
+    threads = collect_review_comments(pr)
+
+    assert len(threads) == 2
+    assert [c['body'] for c in threads[0]['comments']] == [
+        'This can overflow', 'Good catch', 'Fixed in the last commit'
+    ]
+    assert threads[0]['file'] == 'foo.py'
+    assert threads[0]['line'] == 10
+    assert threads[0]['url'] == 'https://github.com/owner/repo/pull/1#discussion_r1'
+    assert threads[0]['comments'][0] == {
+        'author': 'alice', 'created_at': '2026-01-01 10:00:00', 'body': 'This can overflow'
+    }
+    assert threads[1]['file'] == 'bar.py'
+    assert threads[1]['line'] == 42
+    assert [c['body'] for c in threads[1]['comments']] == ['Unrelated place']
+
+
+def test_collect_review_comments_reply_to_unknown_parent():
+    """A reply whose parent is missing (e.g. deleted) still gets a thread of its own."""
+    pr = Mock()
+    pr.get_review_comments.return_value = [_review_comment(2, 'bob', 'Good catch', in_reply_to_id=1)]
+
+    threads = collect_review_comments(pr)
+
+    assert len(threads) == 1
+    assert [c['body'] for c in threads[0]['comments']] == ['Good catch']
+
+
+def test_collect_review_comments_empty():
+    pr = Mock()
+    pr.get_review_comments.return_value = []
+    assert collect_review_comments(pr) == []
+
+
+def test_collect_review_comments_without_user():
+    pr = Mock()
+    pr.get_review_comments.return_value = [_review_comment(1, 'alice', 'orphaned')]
+    pr.get_review_comments.return_value[0].user = None
+
+    assert collect_review_comments(pr)[0]['comments'][0]['author'] == ''
+
+
+def test_describe_comment_location_single_line():
+    location = describe_comment_location(_review_comment(1, 'alice', 'body', line=10))
+    assert location == {'file': 'foo.py', 'line': 10, 'side': 'RIGHT'}
+
+
+def test_describe_comment_location_range():
+    comment = _review_comment(1, 'alice', 'body', line=10, start_line=8)
+    assert describe_comment_location(comment) == {'file': 'foo.py', 'lines': '8-10', 'side': 'RIGHT'}
+
+
+def test_describe_comment_location_left_side():
+    comment = _review_comment(1, 'alice', 'body', side='LEFT')
+    assert describe_comment_location(comment)['side'] == 'LEFT'
+
+
+def test_describe_comment_location_missing_side():
+    comment = _review_comment(1, 'alice', 'body', side=None)
+    assert describe_comment_location(comment)['side'] == 'RIGHT'
+
+
+def test_describe_comment_location_outdated():
+    """Once the code falls out of the diff, GitHub keeps only the original_* line numbers."""
+    comment = _review_comment(1, 'alice', 'body', line=None, original_line=7, original_start_line=5)
+
+    assert describe_comment_location(comment) == {
+        'file': 'foo.py', 'lines': '5-7', 'side': 'RIGHT', 'outdated': True
+    }
+
+
+def test_process_review_includes_comments():
+    render = Mock(return_value='user_prompt')
+    args = argparse.Namespace(
+        github_token='gh_token',
+        debug='false',
+        add_review_resolution='false',
+        add_joke='false',
+        author_customization='',
+    )
+    mock_response = mock.Mock()
+    mock_response.choices = [mock.Mock(message=mock.Mock(content='Review'))]
+
+    pr_comments = [{'author': 'alice', 'created_at': '2026-01-01', 'body': 'Please rename this'}]
+    review_comments = [{'file': 'foo.py', 'line': 10, 'comments': [{'body': 'This can overflow'}]}]
+
+    with patch.object(Path, 'read_text', Mock(return_value='system prompt')), \
+         patch.object(Environment, 'get_template', Mock(return_value=Mock(render=render))), \
+         patch('litellm.completion', return_value=mock_response), \
+         patch.dict(os.environ, {'LLM_MODEL': 'gpt-4o'}):
+        process_review('title', 'body', 'diff', 'author', args, False,
+                       pr_comments=pr_comments, review_comments=review_comments)
+
+    context = render.call_args[1]
+    assert 'Please rename this' in context['PR_COMMENTS']
+    assert 'This can overflow' in context['REVIEW_COMMENTS']
+
+
+def test_process_review_without_comments():
+    """With no comments, the template variables are empty so their sections are skipped."""
+    render = Mock(return_value='user_prompt')
+    args = argparse.Namespace(
+        github_token='gh_token',
+        debug='false',
+        add_review_resolution='false',
+        add_joke='false',
+        author_customization='',
+    )
+    mock_response = mock.Mock()
+    mock_response.choices = [mock.Mock(message=mock.Mock(content='Review'))]
+
+    with patch.object(Path, 'read_text', Mock(return_value='system prompt')), \
+         patch.object(Environment, 'get_template', Mock(return_value=Mock(render=render))), \
+         patch('litellm.completion', return_value=mock_response), \
+         patch.dict(os.environ, {'LLM_MODEL': 'gpt-4o'}):
+        process_review('title', 'body', 'diff', 'author', args, False)
+
+    context = render.call_args[1]
+    assert context['PR_COMMENTS'] == ''
+    assert context['REVIEW_COMMENTS'] == ''
+
+
 def _make_github_mock():
     mock_github_instance = Mock()
     mock_repo = Mock()
@@ -295,7 +511,7 @@ def test_publish_annotations_without_marker():
 
 def test_publish_annotations_invalid_annotations_json(capsys):
     content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
-    mock_gh, mock_pr = _make_github_mock()
+    mock_gh, _ = _make_github_mock()
 
     with patch('ai_review.review.Github', return_value=mock_gh), \
          patch('ai_review.review.github_ref', _GITHUB_REF), \
@@ -381,7 +597,7 @@ def test_publish_annotations_no_review_data():
 
 def test_publish_annotations_invalid_review_json(capsys):
     content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
-    mock_gh, mock_pr = _make_github_mock()
+    mock_gh, _ = _make_github_mock()
 
     with patch('ai_review.review.Github', return_value=mock_gh), \
          patch('ai_review.review.github_ref', _GITHUB_REF), \
@@ -402,12 +618,14 @@ def test_main_block():
     mock_file.patch = '@@ -1,2 +1,2 @@\n context\n+added'
     mock_file.filename = 'test.py'
     mock_pr.get_files.return_value = [mock_file]
-    mock_pr.get_issue_comments.return_value = []
+    mock_pr.get_issue_comments.return_value = [_issue_comment('alice', 'Please rename this')]
+    mock_pr.get_review_comments.return_value = [_review_comment(1, 'bob', 'This can overflow')]
     mock_github_instance.get_repo.return_value = mock_repo
     mock_repo.get_pull.return_value = mock_pr
 
     mock_response = Mock()
     mock_response.choices = [Mock(message=Mock(content='Review content'))]
+    render = Mock(return_value='user prompt')
 
     with patch('sys.argv', ['review.py', 'gh_token', 'false', 'false', 'false', '']), \
          patch.dict(os.environ, {
@@ -418,7 +636,11 @@ def test_main_block():
          patch('github.Github', return_value=mock_github_instance), \
          patch('litellm.completion', return_value=mock_response), \
          patch('pathlib.Path.read_text', return_value='system prompt'), \
-         patch.object(Environment, 'get_template', return_value=Mock(render=Mock(return_value='user prompt'))):
+         patch.object(Environment, 'get_template', return_value=Mock(render=render)):
         runpy.run_module('ai_review.review', run_name='__main__')
 
     mock_pr.create_issue_comment.assert_called()
+
+    context = render.call_args[1]
+    assert 'Please rename this' in context['PR_COMMENTS']
+    assert 'This can overflow' in context['REVIEW_COMMENTS']

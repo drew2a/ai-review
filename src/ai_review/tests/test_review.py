@@ -6,9 +6,12 @@ from pathlib import Path
 from unittest import mock
 from unittest.mock import Mock, patch
 
+from github import GithubException
 from jinja2 import Environment
 
 from ai_review.review import (
+    build_inline_comments,
+    collect_commentable_lines,
     collect_pr_comments,
     collect_review_comments,
     describe_comment_location,
@@ -20,7 +23,7 @@ from ai_review.review import (
     parse_args,
     parse_author_customization,
     process_review,
-    publish_annotations,
+    publish_review,
 )
 
 
@@ -260,8 +263,7 @@ def _issue_comment(author: str, body: str, created_at: str = '2026-01-01 10:00:0
 
 
 def _review_comment(comment_id: int, author: str, body: str, path: str = 'foo.py', line: int = 10,
-                    start_line=None, side: str = 'RIGHT', in_reply_to_id=None,
-                    original_line: int = 7, original_start_line=None):
+                    start_line=None, side: str = 'RIGHT', in_reply_to_id=None):
     comment = Mock()
     comment.id = comment_id
     comment.user = Mock(login=author)
@@ -270,8 +272,6 @@ def _review_comment(comment_id: int, author: str, body: str, path: str = 'foo.py
     comment.path = path
     comment.line = line
     comment.start_line = start_line
-    comment.original_line = original_line
-    comment.original_start_line = original_start_line
     comment.side = side
     comment.in_reply_to_id = in_reply_to_id
     comment.diff_hunk = '@@ -1,2 +1,2 @@\n-old\n+new'
@@ -376,6 +376,22 @@ def test_collect_review_comments_without_user():
     assert collect_review_comments(pr)[0]['comments'][0]['author'] == ''
 
 
+def test_collect_review_comments_skips_outdated_threads():
+    """Once the code falls out of the diff, GitHub clears `line` and the whole thread is dropped."""
+    pr = Mock()
+    pr.get_review_comments.return_value = [
+        _review_comment(1, 'alice', 'Outdated point', line=None),
+        _review_comment(2, 'bob', 'Reply to the outdated point', line=None, in_reply_to_id=1),
+        _review_comment(3, 'carol', 'Still relevant', path='bar.py', line=42),
+    ]
+
+    threads = collect_review_comments(pr)
+
+    assert len(threads) == 1
+    assert threads[0]['file'] == 'bar.py'
+    assert [c['body'] for c in threads[0]['comments']] == ['Still relevant']
+
+
 def test_describe_comment_location_single_line():
     location = describe_comment_location(_review_comment(1, 'alice', 'body', line=10))
     assert location == {'file': 'foo.py', 'line': 10, 'side': 'RIGHT'}
@@ -394,15 +410,6 @@ def test_describe_comment_location_left_side():
 def test_describe_comment_location_missing_side():
     comment = _review_comment(1, 'alice', 'body', side=None)
     assert describe_comment_location(comment)['side'] == 'RIGHT'
-
-
-def test_describe_comment_location_outdated():
-    """Once the code falls out of the diff, GitHub keeps only the original_* line numbers."""
-    comment = _review_comment(1, 'alice', 'body', line=None, original_line=7, original_start_line=5)
-
-    assert describe_comment_location(comment) == {
-        'file': 'foo.py', 'lines': '5-7', 'side': 'RIGHT', 'outdated': True
-    }
 
 
 def test_process_review_includes_comments():
@@ -456,11 +463,64 @@ def test_process_review_without_comments():
     assert context['REVIEW_COMMENTS'] == ''
 
 
+def _diff_file(filename: str = 'foo.py', patch='@@ -8,3 +8,4 @@\n context\n context\n+added\n context'):
+    diff_file = Mock()
+    diff_file.filename = filename
+    diff_file.patch = patch
+    return diff_file
+
+
+def test_collect_commentable_lines():
+    """Added and context lines of the new file version are commentable, deleted ones are not."""
+    diff_file = _diff_file(patch='@@ -8,3 +8,3 @@\n context\n-removed\n+added\n context')
+
+    assert collect_commentable_lines([diff_file]) == {'foo.py': {8, 9, 10}}
+
+
+def test_collect_commentable_lines_without_patch():
+    """A file without a patch (e.g. binary) has no commentable lines."""
+    assert collect_commentable_lines([_diff_file(patch=None)]) == {'foo.py': set()}
+
+
+def test_collect_commentable_lines_line_before_hunk_header():
+    """Diff lines arriving before any @@ header cannot be numbered, so they are not commentable."""
+    assert collect_commentable_lines([_diff_file(patch='+orphaned line')]) == {'foo.py': set()}
+
+
+def test_build_inline_comments():
+    comments = [{'file': 'foo.py', 'line': 10, 'message': 'bug: overflow'}]
+
+    assert build_inline_comments(comments, {'foo.py': {9, 10}}) == [
+        {'path': 'foo.py', 'line': 10, 'side': 'RIGHT', 'body': 'bug: overflow'}
+    ]
+
+
+def test_build_inline_comments_accepts_line_as_string():
+    comments = [{'file': 'foo.py', 'line': '10', 'message': 'bug: overflow'}]
+
+    assert build_inline_comments(comments, {'foo.py': {10}})[0]['line'] == 10
+
+
+def test_build_inline_comments_drops_invalid(capsys):
+    comments = [
+        {'file': 'foo.py', 'line': 99, 'message': 'points outside of the diff'},
+        {'file': 'unknown.py', 'line': 10, 'message': 'points at a file not in the diff'},
+        {'file': 'foo.py', 'line': 'not a number', 'message': 'has no usable line'},
+        {'file': 'foo.py', 'message': 'has no line at all'},
+        {'file': 'foo.py', 'line': 10},
+        {'line': 10, 'message': 'has no file'},
+    ]
+
+    assert build_inline_comments(comments, {'foo.py': {10}}) == []
+    assert capsys.readouterr().out.count('Skipping comment') == len(comments)
+
+
 def _make_github_mock():
     mock_github_instance = Mock()
     mock_repo = Mock()
     mock_pr = Mock()
     mock_pr.get_issue_comments.return_value = []
+    mock_pr.get_files.return_value = [_diff_file()]
     mock_github_instance.get_repo.return_value = mock_repo
     mock_repo.get_pull.return_value = mock_pr
     return mock_github_instance, mock_pr
@@ -470,12 +530,22 @@ _GITHUB_REF = 'refs/pull/1/merge'
 _GITHUB_REPO = 'owner/repo'
 
 
-def test_publish_annotations_debug(capsys):
-    mock_gh, mock_pr = _make_github_mock()
+def _publish(content, add_review_resolution=False, debug=False, mock_pr=None):
+    mock_gh, pr = _make_github_mock()
+    if mock_pr is not None:
+        pr = mock_pr
+        mock_gh.get_repo.return_value.get_pull.return_value = pr
+
     with patch('ai_review.review.Github', return_value=mock_gh), \
          patch('ai_review.review.github_ref', _GITHUB_REF), \
          patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations('Human summary', 'token', True, 'gpt-4o', False)
+        publish_review(content, 'token', debug, 'gpt-4o', add_review_resolution)
+
+    return pr
+
+
+def test_publish_review_debug(capsys):
+    mock_pr = _publish('Human summary', debug=True)
 
     out = capsys.readouterr().out
     assert 'Human summary' in out
@@ -483,46 +553,57 @@ def test_publish_annotations_debug(capsys):
     assert 'gpt-4o' in call_arg
 
 
-def test_publish_annotations_with_marker_and_annotations(capsys):
-    annotations = [{"file": "foo.py", "line": 10, "message": "Issue here"}]
-    tech_info = json.dumps({"annotations": annotations})
+def test_publish_review_posts_inline_comments():
+    comments = [{"file": "foo.py", "line": 10, "message": "bug: overflow"}]
+    tech_info = json.dumps({"comments": comments})
     content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
-    mock_gh, mock_pr = _make_github_mock()
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', False)
-
-    out = capsys.readouterr().out
-    assert '::warning file=foo.py,line=10::Issue here' in out
-    mock_pr.create_issue_comment.assert_called_once()
-
-
-def test_publish_annotations_without_marker():
-    mock_gh, mock_pr = _make_github_mock()
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations('Just a human summary', 'token', False, 'gpt-4o', False)
+    mock_pr = _publish(content)
 
     mock_pr.create_issue_comment.assert_called_once()
+    mock_pr.create_review.assert_called_once_with(body='', event='COMMENT', comments=[
+        {'path': 'foo.py', 'line': 10, 'side': 'RIGHT', 'body': 'bug: overflow'}
+    ])
 
 
-def test_publish_annotations_invalid_annotations_json(capsys):
+def test_publish_review_accepts_legacy_annotations_key():
+    """The comments used to be published under the "annotations" key; it is still understood."""
+    tech_info = json.dumps({"annotations": [{"file": "foo.py", "line": 10, "message": "Issue here"}]})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+
+    mock_pr = _publish(content)
+
+    assert mock_pr.create_review.call_args[1]['comments'][0]['body'] == 'Issue here'
+
+
+def test_publish_review_skips_comment_outside_diff(capsys):
+    tech_info = json.dumps({"comments": [{"file": "foo.py", "line": 99, "message": "Issue here"}]})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+
+    mock_pr = _publish(content)
+
+    assert 'Skipping comment' in capsys.readouterr().out
+    mock_pr.create_review.assert_not_called()
+
+
+def test_publish_review_without_marker():
+    mock_pr = _publish('Just a human summary')
+
+    mock_pr.create_issue_comment.assert_called_once()
+    mock_pr.create_review.assert_not_called()
+
+
+def test_publish_review_invalid_json(capsys):
     content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
-    mock_gh, _ = _make_github_mock()
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', False)
+    mock_pr = _publish(content)
 
-    assert 'Error parsing technical information JSON (annotations)' in capsys.readouterr().out
+    assert 'Error parsing technical information JSON' in capsys.readouterr().out
+    mock_pr.create_review.assert_not_called()
 
 
-def test_publish_annotations_deletes_old_bot_comments():
-    mock_gh, mock_pr = _make_github_mock()
+def test_publish_review_deletes_old_bot_comments():
+    _, mock_pr = _make_github_mock()
     bot_comment = Mock()
     bot_comment.user.login = 'github-actions[bot]'
     bot_comment.body = '# AI Review\n\nOld content'
@@ -531,80 +612,78 @@ def test_publish_annotations_deletes_old_bot_comments():
     other_comment.body = '# AI Review'
     mock_pr.get_issue_comments.return_value = [bot_comment, other_comment]
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations('New review', 'token', False, 'gpt-4o', False)
+    _publish('New review', mock_pr=mock_pr)
 
     bot_comment.delete.assert_called_once()
     other_comment.delete.assert_not_called()
 
 
-def test_publish_annotations_empty_summary():
+def test_publish_review_empty_summary():
     """When there is no text before the marker, human_summary is empty."""
-    tech_info = json.dumps({"annotations": []})
+    tech_info = json.dumps({"comments": []})
     content = f'### TECHNICAL INFORMATION\n{tech_info}'
-    mock_gh, mock_pr = _make_github_mock()
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', False)
+    mock_pr = _publish(content)
 
     mock_pr.create_issue_comment.assert_not_called()
 
 
-def test_publish_annotations_with_valid_review_resolution():
-    tech_info = json.dumps({"annotations": [], "review": {"resolution": "APPROVE", "review_message": "LGTM"}})
+def test_publish_review_with_valid_resolution():
+    tech_info = json.dumps({"comments": [], "review": {"resolution": "APPROVE", "review_message": "LGTM"}})
     content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
-    mock_gh, mock_pr = _make_github_mock()
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', True)
+    mock_pr = _publish(content, add_review_resolution=True)
 
-    mock_pr.create_review.assert_called_once_with(body='LGTM', event='APPROVE')
+    mock_pr.create_review.assert_called_once_with(body='LGTM', event='APPROVE', comments=[])
 
 
-def test_publish_annotations_with_invalid_review_resolution(capsys):
-    tech_info = json.dumps({"annotations": [], "review": {"resolution": "UNKNOWN", "review_message": ""}})
+def test_publish_review_with_invalid_resolution(capsys):
+    tech_info = json.dumps({"comments": [], "review": {"resolution": "UNKNOWN", "review_message": ""}})
     content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
-    mock_gh, mock_pr = _make_github_mock()
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', True)
+    mock_pr = _publish(content, add_review_resolution=True)
 
     assert "Unknown resolution 'UNKNOWN'" in capsys.readouterr().out
     mock_pr.create_review.assert_not_called()
 
 
-def test_publish_annotations_no_review_data():
-    """When technical info has no 'review' key, create_review is not called."""
-    tech_info = json.dumps({"annotations": []})
+def test_publish_review_invalid_resolution_still_posts_comments(capsys):
+    """A broken review block does not lose the inline comments; they go out as a plain COMMENT."""
+    tech_info = json.dumps({
+        "comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}],
+        "review": {"resolution": "UNKNOWN", "review_message": "ignored"},
+    })
     content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
-    mock_gh, mock_pr = _make_github_mock()
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', True)
+    mock_pr = _publish(content, add_review_resolution=True)
 
-    mock_pr.create_review.assert_not_called()
+    assert "Unknown resolution 'UNKNOWN'" in capsys.readouterr().out
+    assert mock_pr.create_review.call_args[1]['event'] == 'COMMENT'
 
 
-def test_publish_annotations_invalid_review_json(capsys):
-    content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
-    mock_gh, _ = _make_github_mock()
+def test_publish_review_resolution_ignored_when_disabled():
+    tech_info = json.dumps({
+        "comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}],
+        "review": {"resolution": "APPROVE", "review_message": "LGTM"},
+    })
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
 
-    with patch('ai_review.review.Github', return_value=mock_gh), \
-         patch('ai_review.review.github_ref', _GITHUB_REF), \
-         patch('ai_review.review.github_repo', _GITHUB_REPO):
-        publish_annotations(content, 'token', False, 'gpt-4o', True)
+    mock_pr = _publish(content, add_review_resolution=False)
 
-    assert 'Error parsing technical information JSON (review)' in capsys.readouterr().out
+    assert mock_pr.create_review.call_args[1]['event'] == 'COMMENT'
+    assert mock_pr.create_review.call_args[1]['body'] == ''
+
+
+def test_publish_review_github_error(capsys):
+    """A rejected review is reported instead of failing the whole action."""
+    tech_info = json.dumps({"comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}]})
+    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    _, mock_pr = _make_github_mock()
+    mock_pr.create_review.side_effect = GithubException(422, {'message': 'Unprocessable'}, None)
+
+    _publish(content, mock_pr=mock_pr)
+
+    assert 'Error submitting the PR review' in capsys.readouterr().out
 
 
 def test_main_block():

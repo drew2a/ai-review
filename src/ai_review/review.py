@@ -13,6 +13,41 @@ GITHUB_ACTIONS_BOT = 'github-actions[bot]'
 HEADER = '# AI Review'
 REVIEW_RESOLUTIONS = ('APPROVE', 'REQUEST_CHANGES', 'COMMENT')
 
+# Schema enforced on the LLM response, so the output needs no marker-based parsing.
+RESPONSE_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'summary': {
+            'type': 'string',
+            'description': 'Human-readable review summary in Markdown, posted as a PR comment.',
+        },
+        'comments': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'file': {'type': 'string'},
+                    'line': {'type': 'integer'},
+                    'message': {'type': 'string'},
+                },
+                'required': ['file', 'line', 'message'],
+                'additionalProperties': False,
+            },
+        },
+        'review': {
+            'type': 'object',
+            'properties': {
+                'resolution': {'type': 'string', 'enum': list(REVIEW_RESOLUTIONS)},
+                'review_message': {'type': 'string'},
+            },
+            'required': ['resolution', 'review_message'],
+            'additionalProperties': False,
+        },
+    },
+    'required': ['summary', 'comments', 'review'],
+    'additionalProperties': False,
+}
+
 HUNK_HEADER_RE = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
 
 # Environment variables set by GitHub Actions
@@ -190,7 +225,11 @@ def process_review(title: str, body: str | None, diff_string, pr_author: str, ar
     # litellm handles api_key, base_url, api_version from env vars automatically
     response = litellm.completion(
         model=llm_model,
-        messages=messages
+        messages=messages,
+        response_format={
+            'type': 'json_schema',
+            'json_schema': {'name': 'code_review', 'strict': True, 'schema': RESPONSE_SCHEMA},
+        },
     )
 
     return response.choices[0].message.content
@@ -246,14 +285,11 @@ def build_inline_comments(comments: list[dict], commentable_lines: dict[str, set
     return inline_comments
 
 
-def publish_review(summary_content, github_token, debug, llm_model, add_review_resolution):
+def publish_review(review_content, github_token, debug, llm_model, add_review_resolution):
     """
-    Splits the LLM response into two parts:
-      1. The human-readable summary (before the marker).
-      2. The technical information after the marker ### TECHNICAL INFORMATION.
-
-    The technical information must be a JSON block with the following structure:
+    Parses the LLM response, which RESPONSE_SCHEMA constrains to a single JSON object:
     {
+      "summary": "<markdown review summary>",
       "comments": [ {"file": "<path>", "line": <line>, "message": "<markdown>"}, ... ],
       "review": {
           "resolution": "<APPROVE|REQUEST_CHANGES|COMMENT>",
@@ -270,24 +306,22 @@ def publish_review(summary_content, github_token, debug, llm_model, add_review_r
         repeating itself.
     """
     if debug:
-        print(summary_content)
+        print(review_content)
 
-    marker = "### TECHNICAL INFORMATION"
-    if marker in summary_content:
-        parts = summary_content.split(marker, 1)
-        human_summary = parts[0].strip()
-        technical_info_str = parts[1].strip()
-    else:
-        human_summary = summary_content
-        technical_info_str = None
-
-    tech_info = {}
-    technical_info_str = extract_json(technical_info_str)
-    if technical_info_str:
+    tech_info = None
+    json_str = extract_json(review_content)
+    if json_str:
         try:
-            tech_info = json.loads(technical_info_str)
+            tech_info = json.loads(json_str)
         except json.JSONDecodeError as e:
-            print("Error parsing technical information JSON:", e)
+            print("Error parsing the review JSON:", e)
+
+    if tech_info is None:
+        # The model ignored the enforced schema; its raw output is still a review worth posting.
+        tech_info = {}
+        human_summary = (review_content or '').strip()
+    else:
+        human_summary = (tech_info.get('summary') or '').strip()
 
     g = Github(github_token)
     repo = g.get_repo(github_repo)
@@ -369,7 +403,8 @@ def help_llm(diff_file: File):
 def extract_json(text):
     if not text:
         return text
-    return re.search(r'\{.*\}', text, re.DOTALL).group(0)
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    return match.group(0) if match else None
 
 
 def parse_author_customization(customization_yaml: str):

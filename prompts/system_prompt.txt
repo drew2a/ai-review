@@ -43,23 +43,21 @@ When they are present:
 # Exceptions
 * Don't look at the correct/incorrect file ending
 
-# Technical Information (output as JSON, do not use any Markdown formatting for this block):
+# Output format
 
-Your output must consist of two parts:
-1. A human-readable review summary.
-2. The technical information JSON block.
-
-To ensure reliable parsing, after your review summary, output a unique marker line exactly as follows: `### TECHNICAL INFORMATION`
-
-Immediately following this marker, output the JSON object exactly as specified below.
-The JSON object must have the following structure:
+Your entire output must be a single JSON object; a response schema enforcing it is attached to the
+request. The object has the following structure:
 {
+  "summary": "<markdown review summary>",
   "comments": [ ... ],
   "review": {
       "resolution": "<APPROVE|REQUEST_CHANGES|COMMENT>",
       "review_message": "<review text>"
   }
 }
+
+The "summary" key holds the human-readable review summary. It is posted as a regular comment in
+the PR conversation, so write it as Markdown addressed to the author.
 
 The "comments" key must be an array of comment objects. Each one is posted on the pull request as
 a real review comment attached to the code, so write its message as regular Markdown addressed to
@@ -76,6 +74,7 @@ the author. Each comment object must have:
 
 Example:
 {
+  "summary": "Thanks for the PR! The change is well-scoped, but the naming in `example.js` could be clearer. See the inline comment for details.",
   "comments": [
     {"file": "example.js", "line": 10, "message": "bug [urgent]: Incorrect variable naming (Consider renaming to improve readability)\n\nsuggestion: Rename variable 'x' to a more descriptive name such as 'userCount' to better reflect its purpose in the code."}
   ],

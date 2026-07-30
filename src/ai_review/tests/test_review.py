@@ -10,6 +10,7 @@ from github import GithubException
 from jinja2 import Environment
 
 from ai_review.review import (
+    RESPONSE_SCHEMA,
     build_inline_comments,
     collect_commentable_lines,
     collect_pr_comments,
@@ -60,6 +61,10 @@ def test_process_review(mock_completion):
         {"role": 'system', "content": "prompt\nprompt"},
         {'role': 'user', 'content': 'user_prompt'}
     ]
+    assert call_kwargs['response_format'] == {
+        'type': 'json_schema',
+        'json_schema': {'name': 'code_review', 'strict': True, 'schema': RESPONSE_SCHEMA},
+    }
 
     assert 'api_key' not in call_kwargs
     assert 'base_url' not in call_kwargs
@@ -87,6 +92,7 @@ def test_extract_json():
 def test_extract_no_text():
     assert not extract_json(None)
     assert extract_json('') == ''
+    assert extract_json('plain text without json') is None
 
 
 def test_parse_author_customization_empty():
@@ -545,7 +551,8 @@ def _publish(content, add_review_resolution=False, debug=False, mock_pr=None):
 
 
 def test_publish_review_debug(capsys):
-    mock_pr = _publish('Human summary', debug=True)
+    content = json.dumps({"summary": "Human summary", "comments": []})
+    mock_pr = _publish(content, debug=True)
 
     out = capsys.readouterr().out
     assert 'Human summary' in out
@@ -555,8 +562,7 @@ def test_publish_review_debug(capsys):
 
 def test_publish_review_posts_inline_comments():
     comments = [{"file": "foo.py", "line": 10, "message": "bug: overflow"}]
-    tech_info = json.dumps({"comments": comments})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"summary": "Human summary", "comments": comments})
 
     mock_pr = _publish(content)
 
@@ -568,8 +574,7 @@ def test_publish_review_posts_inline_comments():
 
 def test_publish_review_accepts_legacy_annotations_key():
     """The comments used to be published under the "annotations" key; it is still understood."""
-    tech_info = json.dumps({"annotations": [{"file": "foo.py", "line": 10, "message": "Issue here"}]})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"annotations": [{"file": "foo.py", "line": 10, "message": "Issue here"}]})
 
     mock_pr = _publish(content)
 
@@ -577,8 +582,8 @@ def test_publish_review_accepts_legacy_annotations_key():
 
 
 def test_publish_review_skips_comment_outside_diff(capsys):
-    tech_info = json.dumps({"comments": [{"file": "foo.py", "line": 99, "message": "Issue here"}]})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"summary": "Human summary",
+                          "comments": [{"file": "foo.py", "line": 99, "message": "Issue here"}]})
 
     mock_pr = _publish(content)
 
@@ -586,19 +591,21 @@ def test_publish_review_skips_comment_outside_diff(capsys):
     mock_pr.create_review.assert_not_called()
 
 
-def test_publish_review_without_marker():
+def test_publish_review_plain_text_fallback():
+    """A model that ignored the schema still gets its raw output posted as the summary."""
     mock_pr = _publish('Just a human summary')
 
-    mock_pr.create_issue_comment.assert_called_once()
+    assert 'Just a human summary' in mock_pr.create_issue_comment.call_args[0][0]
     mock_pr.create_review.assert_not_called()
 
 
 def test_publish_review_invalid_json(capsys):
-    content = 'Human summary\n### TECHNICAL INFORMATION\n{invalid json}'
+    content = 'Human summary {invalid json}'
 
     mock_pr = _publish(content)
 
-    assert 'Error parsing technical information JSON' in capsys.readouterr().out
+    assert 'Error parsing the review JSON' in capsys.readouterr().out
+    assert 'Human summary' in mock_pr.create_issue_comment.call_args[0][0]
     mock_pr.create_review.assert_not_called()
 
 
@@ -619,9 +626,8 @@ def test_publish_review_deletes_old_bot_comments():
 
 
 def test_publish_review_empty_summary():
-    """When there is no text before the marker, human_summary is empty."""
-    tech_info = json.dumps({"comments": []})
-    content = f'### TECHNICAL INFORMATION\n{tech_info}'
+    """When the summary is empty, no conversation comment is posted."""
+    content = json.dumps({"summary": "", "comments": []})
 
     mock_pr = _publish(content)
 
@@ -629,8 +635,8 @@ def test_publish_review_empty_summary():
 
 
 def test_publish_review_with_valid_resolution():
-    tech_info = json.dumps({"comments": [], "review": {"resolution": "APPROVE", "review_message": "LGTM"}})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"summary": "Human summary", "comments": [],
+                          "review": {"resolution": "APPROVE", "review_message": "LGTM"}})
 
     mock_pr = _publish(content, add_review_resolution=True)
 
@@ -639,8 +645,8 @@ def test_publish_review_with_valid_resolution():
 
 def test_publish_review_bodyless_approve_is_submitted():
     """GitHub accepts an APPROVE review without a body, so the resolution is not dropped."""
-    tech_info = json.dumps({"comments": [], "review": {"resolution": "APPROVE", "review_message": ""}})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"summary": "Human summary", "comments": [],
+                          "review": {"resolution": "APPROVE", "review_message": ""}})
 
     mock_pr = _publish(content, add_review_resolution=True)
 
@@ -648,8 +654,8 @@ def test_publish_review_bodyless_approve_is_submitted():
 
 
 def test_publish_review_with_invalid_resolution(capsys):
-    tech_info = json.dumps({"comments": [], "review": {"resolution": "UNKNOWN", "review_message": ""}})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"summary": "Human summary", "comments": [],
+                          "review": {"resolution": "UNKNOWN", "review_message": ""}})
 
     mock_pr = _publish(content, add_review_resolution=True)
 
@@ -659,11 +665,11 @@ def test_publish_review_with_invalid_resolution(capsys):
 
 def test_publish_review_invalid_resolution_still_posts_comments(capsys):
     """A broken review block does not lose the inline comments; they go out as a plain COMMENT."""
-    tech_info = json.dumps({
+    content = json.dumps({
+        "summary": "Human summary",
         "comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}],
         "review": {"resolution": "UNKNOWN", "review_message": "ignored"},
     })
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
 
     mock_pr = _publish(content, add_review_resolution=True)
 
@@ -672,11 +678,11 @@ def test_publish_review_invalid_resolution_still_posts_comments(capsys):
 
 
 def test_publish_review_resolution_ignored_when_disabled():
-    tech_info = json.dumps({
+    content = json.dumps({
+        "summary": "Human summary",
         "comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}],
         "review": {"resolution": "APPROVE", "review_message": "LGTM"},
     })
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
 
     mock_pr = _publish(content, add_review_resolution=False)
 
@@ -686,8 +692,8 @@ def test_publish_review_resolution_ignored_when_disabled():
 
 def test_publish_review_github_error(capsys):
     """A rejected review is reported instead of failing the whole action."""
-    tech_info = json.dumps({"comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}]})
-    content = f'Human summary\n### TECHNICAL INFORMATION\n{tech_info}'
+    content = json.dumps({"summary": "Human summary",
+                          "comments": [{"file": "foo.py", "line": 10, "message": "bug: overflow"}]})
     _, mock_pr = _make_github_mock()
     mock_pr.create_review.side_effect = GithubException(422, {'message': 'Unprocessable'}, None)
 

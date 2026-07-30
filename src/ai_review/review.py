@@ -3,7 +3,6 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 import litellm
 import yaml
@@ -29,18 +28,113 @@ def parse_args():
     return parser.parse_args()
 
 
+class BlockStyleDumper(yaml.SafeDumper):
+    """ Dumper that writes multi-line strings as literal blocks, which keeps diffs readable."""
+
+
+def represent_str(dumper: yaml.SafeDumper, data: str):
+    style = '|' if '\n' in data else None
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style=style)
+
+
+BlockStyleDumper.add_representer(str, represent_str)
+
+
 def dump_to_yaml(data: dict | list[dict] | None) -> str:
     """ Dump a dictionary or list of dictionaries to YAML with markdown code block."""
     if not data:
         return ''
 
-    yaml_dump = yaml.dump(data, allow_unicode=True, sort_keys=False)
+    yaml_dump = yaml.dump(data, Dumper=BlockStyleDumper, allow_unicode=True, sort_keys=False)
 
     return f'```yaml\n{yaml_dump}```'
 
 
-def process_review(title: str, body: Optional[str], diff_string, pr_author: str, args, debug):
-    """ Calls the LLM API to generate a review based on the PR title, body, and diff."""
+def is_previous_ai_review(comment) -> bool:
+    """ Check whether a comment is a review previously posted by this action."""
+    user = comment.user
+    return bool(comment.body) and HEADER in comment.body and bool(user) and user.login == GITHUB_ACTIONS_BOT
+
+
+def collect_pr_comments(pr) -> list[dict]:
+    """
+    Collect the comments of the PR conversation.
+
+    Reviews previously posted by this action are skipped, so the LLM is not fed its own output.
+    """
+    return [
+        {
+            'author': comment.user.login if comment.user else '',
+            'created_at': str(comment.created_at),
+            'body': comment.body,
+        }
+        for comment in pr.get_issue_comments()
+        if not is_previous_ai_review(comment)
+    ]
+
+
+def describe_comment_location(comment) -> dict:
+    """
+    Describe which lines of which file a review comment points to.
+
+    `line` is the last line of the commented range and `start_line` the first one, both in the new
+    version of the file unless `side` is LEFT. GitHub sets them to None once the commented code
+    falls out of the diff, leaving only the `original_*` values.
+    """
+    line = comment.line if comment.line is not None else comment.original_line
+    start_line = comment.start_line if comment.start_line is not None else comment.original_start_line
+
+    location = {'file': comment.path}
+    if start_line and start_line != line:
+        location['lines'] = f'{start_line}-{line}'
+    else:
+        location['line'] = line
+    location['side'] = comment.side or 'RIGHT'
+    if comment.line is None:
+        location['outdated'] = True
+
+    return location
+
+
+def collect_review_comments(pr) -> list[dict]:
+    """
+    Collect the review comments left on the code, grouped into threads.
+
+    Replies are chained under the comment that started the thread, so the discussion of a single
+    place in the code stays together. Each thread also carries the `diff_hunk` it was written
+    against, because a comment is only meaningful together with the code it points to.
+    """
+    threads: dict[int, dict] = {}
+    root_ids: dict[int, int] = {}
+
+    for comment in pr.get_review_comments():
+        parent_id = comment.in_reply_to_id
+        # Comments arrive oldest first, so a parent is always resolved before its replies.
+        root_id = root_ids.get(parent_id, parent_id) if parent_id else comment.id
+        root_ids[comment.id] = root_id
+
+        thread = threads.get(root_id)
+        if thread is None:
+            thread = threads[root_id] = {
+                **describe_comment_location(comment),
+                'url': comment.html_url,
+                'diff_hunk': comment.diff_hunk,
+                'comments': [],
+            }
+
+        thread['comments'].append({
+            'author': comment.user.login if comment.user else '',
+            'created_at': str(comment.created_at),
+            'body': comment.body,
+        })
+
+    return list(threads.values())
+
+
+def process_review(title: str, body: str | None, diff_string, pr_author: str, args, debug,
+                   pr_comments: list[dict] | None = None,
+                   review_comments: list[dict] | None = None):
+    """ Calls the LLM API to generate a review based on the PR title, body, diff and comments."""
 
     system_prompt = Path('/app/prompts/system_prompt.txt').read_text()
     if args.add_joke.lower() == 'true':
@@ -66,7 +160,9 @@ def process_review(title: str, body: Optional[str], diff_string, pr_author: str,
             'pr_body': body,
             'pr_author': pr_author,
         }),
-        'DIFF': diff_string
+        'DIFF': diff_string,
+        'PR_COMMENTS': dump_to_yaml(pr_comments),
+        'REVIEW_COMMENTS': dump_to_yaml(review_comments),
     }
 
     user_template = env.get_template('user_prompt.txt')
@@ -148,7 +244,7 @@ def publish_annotations(summary_content, github_token, debug, llm_model, add_rev
     # Delete previous comments from GitHub Actions that include the HEADER
     for comment in pr.get_issue_comments():
         print(comment.user.login)
-        if HEADER in comment.body and comment.user.login == GITHUB_ACTIONS_BOT:
+        if is_previous_ai_review(comment):
             comment.delete()
 
     if human_summary:
@@ -196,7 +292,7 @@ def help_llm(diff_file: File):
             current_line_number = int(match.group(1))
             output_lines.append(line)
         else:
-            if line.startswith(" ") or line.startswith("+"):
+            if line.startswith((" ", "+")):
                 if current_line_number is not None:
                     annotated_line = f"{current_line_number:4d}: {line}"
                     current_line_number += 1
@@ -214,7 +310,7 @@ def help_llm(diff_file: File):
 def extract_json(text):
     if not text:
         return text
-    return re.search(r'\{.*\}', text, re.S).group(0)
+    return re.search(r'\{.*\}', text, re.DOTALL).group(0)
 
 
 def parse_author_customization(customization_yaml: str):
@@ -253,8 +349,12 @@ if __name__ == "__main__":
     )
     debug = args.debug.lower() == 'true'
 
+    pr_comments = collect_pr_comments(pr)
+    review_comments = collect_review_comments(pr)
+
     add_review_resolution = args.add_review_resolution.lower() == 'true'
-    review_content = process_review(pr.title, pr.body, diff_string, pr_author, args, debug)
+    review_content = process_review(pr.title, pr.body, diff_string, pr_author, args, debug,
+                                    pr_comments=pr_comments, review_comments=review_comments)
 
     llm_model = os.environ.get('LLM_MODEL')
     publish_annotations(review_content, args.github_token, debug, llm_model, add_review_resolution)

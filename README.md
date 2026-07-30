@@ -9,6 +9,7 @@ A GitHub Action that provides automated code review using AI to analyze pull req
 - Automatically reviews pull request changes using AI
 - Provides detailed code suggestions and improvements
 - Adds review comments directly to the PR
+- Takes the existing PR discussion into account (see [Discussion Context](#discussion-context))
 - Works with any programming language
 - Supports different AI models and API endpoints
 - Optional review resolution statuses (e.g., "APPROVE", "REQUEST_CHANGES", "COMMENT")
@@ -117,6 +118,44 @@ jobs:
           add_review_resolution: false
           add_joke: false
 ```
+
+## Discussion Context
+
+Besides the title, description and diff, the review is given the discussion that already happened on
+the PR, so it can build on it instead of repeating it. Two things are collected:
+
+1. **PR conversation comments** — the comments on the PR itself. Reviews previously posted by this
+   action are skipped, so the model is never fed its own output.
+2. **Review comments on the code** — the comments attached to specific lines. Replies are chained
+   into threads, so the whole discussion about one place in the code stays together.
+
+Each thread is passed with the location it points to, the code it was written against and a link:
+
+```yaml
+- file: src/app.py
+  lines: 8-10
+  side: RIGHT
+  url: https://github.com/owner/repo/pull/1#discussion_r1
+  diff_hunk: |-
+    @@ -5,3 +5,4 @@
+    -old
+    +new
+  comments:
+  - author: alice
+    created_at: 2026-01-01 10:00:00+00:00
+    body: This can overflow for large inputs.
+  - author: bob
+    created_at: 2026-01-01 11:00:00+00:00
+    body: Good catch, fixed in the last commit.
+```
+
+`side` tells whether the lines refer to the new (`RIGHT`) or the old (`LEFT`) version of the file. A
+thread whose code has fallen out of the diff is marked with `outdated: true`, and its line numbers
+then refer to an older version of the file.
+
+This needs no configuration, but note that the action reads the comments through the same
+`github_token`, so the token needs read access to the pull request (the `pull-requests: write`
+permission in the example workflow already covers it).
 
 ## Author Customization
 

@@ -180,15 +180,18 @@ def process_review(title: str, body: str | None, diff_string, pr_author: str, ar
     """ Calls the LLM API to generate a review based on the PR title, body, diff and comments."""
 
     system_prompt = Path('/app/prompts/system_prompt.txt').read_text()
-    if args.add_joke.lower() == 'true':
-        humor_integration = Path('/app/prompts/humor_integration.txt').read_text()
-        system_prompt = f'{system_prompt}\n{humor_integration}'
 
     # Apply author-specific customizations
     customizations = parse_author_customization(args.author_customization)
     author_prompt_addition = get_author_specific_prompt_additions(pr_author, customizations)
     if author_prompt_addition:
         system_prompt += f"\n## Author Customization\n{author_prompt_addition}"
+
+    # The humor prompt comes last: a customization that sets a persona would otherwise get the final
+    # word on tone and the joke would come out as wisdom in that voice rather than as a joke.
+    if args.add_joke.lower() == 'true':
+        humor_integration = Path('/app/prompts/humor_integration.txt').read_text()
+        system_prompt = f'{system_prompt}\n{humor_integration}'
 
     env = Environment(
         loader=FileSystemLoader('/app/prompts'),

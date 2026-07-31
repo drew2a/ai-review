@@ -248,11 +248,14 @@ def test_process_review_without_joke(mock_completion):
     assert mock_completion.call_args[1]['messages'][0]['content'] == 'system prompt'
 
 
-@patch.object(Path, 'read_text', Mock(return_value='system prompt'))
+@patch.object(Path, 'read_text', Mock(side_effect=['BASE PROMPT', 'HUMOR PROMPT']))
 @patch.object(Environment, 'get_template', Mock(return_value=Mock(render=Mock(return_value='user_prompt'))))
 @patch('litellm.completion')
-def test_process_review_joke_survives_author_customization(mock_completion):
-    """The author customization is layered on top of the humor prompt instead of replacing it."""
+def test_process_review_joke_comes_after_author_customization(mock_completion):
+    """
+    The humor prompt survives an author customization and is appended after it, so a persona set by
+    the customization does not get the final word on the tone of the review.
+    """
     args = argparse.Namespace(
         github_token='gh_token',
         debug='false',
@@ -268,8 +271,8 @@ def test_process_review_joke_survives_author_customization(mock_completion):
         process_review('title', 'body', 'diff', 'testuser', args, False)
 
     system_prompt = mock_completion.call_args[1]['messages'][0]['content']
-    assert system_prompt.count('system prompt') == 2  # the base prompt plus the humor prompt
-    assert 'Speak in cryptic wisdom' in system_prompt
+    assert system_prompt.index('BASE PROMPT') < system_prompt.index('Speak in cryptic wisdom')
+    assert system_prompt.index('Speak in cryptic wisdom') < system_prompt.index('HUMOR PROMPT')
 
 
 def test_help_llm_basic():

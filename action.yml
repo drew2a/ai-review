@@ -23,7 +23,7 @@ inputs:
   add_joke:
     description: 'Add a joke to the review comment'
     required: false
-    default: 'false'
+    default: 'true'
 
   author_customization:
     description: 'YAML configuration for customizing reviews based on PR author'

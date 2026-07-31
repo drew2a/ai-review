@@ -57,7 +57,7 @@ So, based on this **(highly unscientific) scale**:
 | `github_token`          | GitHub token for authentication                           | true     | -                    |
 | `debug`                 | Enable debug mode (true/false)                            | false    | `false`              |
 | `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
-| `add_joke`              | Add a joke to the review comment                          | false    | `false`              |
+| `add_joke`              | Add a joke to the review comment                          | false    | `true`               |
 | `author_customization`  | YAML configuration for customizing reviews based on PR author | false | -                    |
 
 ## Environment Variables
@@ -87,7 +87,7 @@ To use this action in your GitHub workflow, add the following step:
     github_token: ${{ secrets.GITHUB_TOKEN }}
     debug: false
     add_review_resolution: false
-    add_joke: false
+    add_joke: true
     author_customization: |
       torvalds: "This is an experienced developer. Focus on architecture and design patterns."
       defunkt: "This is a junior developer. Provide educational feedback and explanations."
@@ -118,7 +118,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           debug: true
           add_review_resolution: false
-          add_joke: false
+          add_joke: true
 ```
 
 ## Discussion Context
@@ -165,6 +165,10 @@ permission in the example workflow already covers it).
 ## Author Customization
 
 The `author_customization` parameter allows you to customize the review behavior based on the PR author's GitHub username. This is useful for providing different types of feedback for team members with different experience levels or roles.
+
+The customization is appended to the prompt on top of the default behaviour rather than replacing
+it. In particular, a customization that sets a persona or a tone does not switch the humor of
+`add_joke` off: the joke is then delivered in that persona's voice.
 
 ### Configuration Format
 

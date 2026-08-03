@@ -25,6 +25,7 @@ from ai_review.review import (
     parse_author_customization,
     process_review,
     publish_review,
+    resolve_pr_number,
 )
 
 
@@ -593,6 +594,7 @@ def _publish(content, add_review_resolution=False, debug=False, mock_pr=None):
 
     with patch('ai_review.review.Github', return_value=mock_gh), \
          patch('ai_review.review.github_ref', _GITHUB_REF), \
+         patch('ai_review.review.github_event_path', None), \
          patch('ai_review.review.github_repo', _GITHUB_REPO):
         publish_review(content, 'token', debug, 'gpt-4o', add_review_resolution)
 
@@ -774,6 +776,7 @@ def test_main_block():
     with patch('sys.argv', ['review.py', 'gh_token', 'false', 'false', 'false', '']), \
          patch.dict(os.environ, {
              'GITHUB_REF': 'refs/pull/1/merge',
+             'GITHUB_EVENT_PATH': '',
              'GITHUB_REPOSITORY': 'owner/repo',
              'LLM_MODEL': 'gpt-4o',
          }), \
@@ -784,7 +787,55 @@ def test_main_block():
         runpy.run_module('ai_review.review', run_name='__main__')
 
     mock_pr.create_issue_comment.assert_called()
+    mock_repo.get_pull.assert_called_with(1)
 
     context = render.call_args[1]
     assert 'Please rename this' in context['PR_COMMENTS']
     assert 'This can overflow' in context['REVIEW_COMMENTS']
+
+
+def _write_event(tmp_path, payload):
+    event_file = tmp_path / 'event.json'
+    event_file.write_text(json.dumps(payload), encoding='utf-8')
+    return str(event_file)
+
+
+def test_resolve_pr_number_from_event_payload(tmp_path):
+    """The event payload wins, since it is the only source that works for every trigger."""
+    event_path = _write_event(tmp_path, {'pull_request': {'number': 42}})
+
+    with patch('ai_review.review.github_event_path', event_path), \
+         patch('ai_review.review.github_ref', 'refs/heads/main'):
+        assert resolve_pr_number() == 42
+
+
+def test_resolve_pr_number_from_ref_without_event_payload():
+    with patch('ai_review.review.github_event_path', None), \
+         patch('ai_review.review.github_ref', 'refs/pull/7/merge'):
+        assert resolve_pr_number() == 7
+
+
+def test_resolve_pr_number_falls_back_to_ref_on_unusable_payload(tmp_path, capsys):
+    """A payload without a pull request (a missing file, another event) must not be fatal."""
+    event_path = _write_event(tmp_path, {'push': {}})
+
+    with patch('ai_review.review.github_event_path', event_path), \
+         patch('ai_review.review.github_ref', 'refs/pull/7/merge'):
+        assert resolve_pr_number() == 7
+
+    assert 'Could not read the PR number' in capsys.readouterr().out
+
+    with patch('ai_review.review.github_event_path', str(tmp_path / 'missing.json')), \
+         patch('ai_review.review.github_ref', 'refs/pull/7/merge'):
+        assert resolve_pr_number() == 7
+
+
+def test_resolve_pr_number_without_any_source():
+    with patch('ai_review.review.github_event_path', None), \
+         patch('ai_review.review.github_ref', 'refs/heads/main'):
+        try:
+            resolve_pr_number()
+        except RuntimeError as e:
+            assert 'refs/heads/main' in str(e)
+        else:
+            raise AssertionError('expected a RuntimeError')

@@ -1,4 +1,8 @@
-[![Build and Test](https://github.com/drew2a/ai-review/actions/workflows/ci.yml/badge.svg)](https://github.com/drew2a/ai-review/actions/workflows/ci.yml) [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
+[![Pytest](https://github.com/drew2a/ai-review/actions/workflows/pytest.yml/badge.svg)](https://github.com/drew2a/ai-review/actions/workflows/pytest.yml)
+[![Release](https://img.shields.io/github/v/release/drew2a/ai-review?logo=github)](https://github.com/drew2a/ai-review/releases/latest)
+[![Marketplace](https://img.shields.io/badge/Marketplace-Liberty%20AI%20PR%20Review-2088FF?logo=github)](https://github.com/marketplace/actions/liberty-ai-pr-review)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
 # AI Code Review Action
 

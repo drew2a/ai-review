@@ -53,6 +53,35 @@ HUNK_HEADER_RE = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
 # Environment variables set by GitHub Actions
 github_ref = os.environ.get('GITHUB_REF')
 github_repo = os.environ.get('GITHUB_REPOSITORY')
+github_event_path = os.environ.get('GITHUB_EVENT_PATH')
+
+
+def resolve_pr_number() -> int:
+    """
+    Find the number of the pull request under review.
+
+    The event payload is the primary source, because it carries the number for every trigger the
+    action can run on. GITHUB_REF holds it only for `pull_request` runs: under
+    `pull_request_target` it points at the base branch instead (`refs/heads/main`), and that is
+    the trigger needed to review PRs from Dependabot and from forks, where `pull_request` gets
+    neither the repository secrets nor a writable token.
+    """
+    if github_event_path:
+        try:
+            payload = json.loads(Path(github_event_path).read_text(encoding='utf-8'))
+            pr_number = payload['pull_request']['number']
+            return int(pr_number)
+        except (OSError, ValueError, TypeError, KeyError) as e:
+            print(f'Could not read the PR number from the event payload: {e!r}')
+
+    parts = (github_ref or '').split('/')
+    if len(parts) > 2 and parts[-2].isdigit():
+        return int(parts[-2])
+
+    raise RuntimeError(
+        f'Could not determine the pull request number '
+        f'(GITHUB_EVENT_PATH={github_event_path!r}, GITHUB_REF={github_ref!r})'
+    )
 
 
 def parse_args():
@@ -328,8 +357,7 @@ def publish_review(review_content, github_token, debug, llm_model, add_review_re
 
     g = Github(github_token)
     repo = g.get_repo(github_repo)
-    pr_number = int(github_ref.split('/')[-2])
-    pr = repo.get_pull(pr_number)
+    pr = repo.get_pull(resolve_pr_number())
 
     # Delete previous summary comments from GitHub Actions that include the HEADER
     for comment in pr.get_issue_comments():
@@ -433,8 +461,7 @@ if __name__ == "__main__":
 
     g = Github(args.github_token)
     repo = g.get_repo(github_repo)
-    pr_number = github_ref.split('/')[-2]
-    pr = repo.get_pull(int(pr_number))
+    pr = repo.get_pull(resolve_pr_number())
 
     # Get PR author information
     pr_author = pr.user.login if pr.user else ""

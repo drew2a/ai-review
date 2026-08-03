@@ -98,7 +98,7 @@ To use this action in your GitHub workflow, add the following step:
 ```yaml
 name: AI Code Review
 
-on: [ pull_request ]
+on: [ pull_request_target ]
 
 permissions:
   pull-requests: write
@@ -120,6 +120,27 @@ jobs:
           add_review_resolution: false
           add_joke: true
 ```
+
+### Why `pull_request_target`
+
+`pull_request` looks like the natural trigger, but GitHub strips two things from those runs when
+the PR comes from Dependabot or from a fork:
+
+- the repository secrets, so `secrets.OPENAI_API_KEY` and friends arrive empty;
+- write access, so `GITHUB_TOKEN` is read-only and the review cannot be posted. The
+  `permissions:` block does not lift this.
+
+`pull_request_target` runs the workflow in the context of the base branch, which keeps both the
+secrets and a writable token, so Dependabot and fork PRs are reviewed like any other. The usual
+warning about this trigger is that it hands a privileged token to a workflow running on untrusted
+code — that does not apply here, because `actions/checkout` checks out the *base* commit and the
+action never executes anything from the pull request. It reads the title, description, diff and
+comments through the GitHub API, and the model it sends them to has no tools. The remaining
+exposure is that the content of a PR can influence the wording of its own review.
+
+If you would rather stay on `pull_request`, the alternative is to keep the review off Dependabot
+PRs (`if: github.actor != 'dependabot[bot]'`) or to duplicate the LLM key into the separate
+Dependabot secret store and pass a PAT as `github_token`.
 
 ## Discussion Context
 

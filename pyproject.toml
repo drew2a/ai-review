@@ -15,7 +15,7 @@ dependencies = [
 dev = [
     "pytest>=9.0.3",
     "diff-cover>=10.4.1",
-    "pytest-cov>=7.1.0",\
+    "pytest-cov>=7.1.0",
     "pytest-sugar>=1.1.1"
 ]
 

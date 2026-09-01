@@ -7,7 +7,7 @@ requires-python = "==3.13.*"
 dependencies = [
     "Jinja2>=3.1.6",
     "PyGithub>=2.6.1",
-    "litellm>=1.94.1",
+    "litellm>=1.98.0",
     "pyyaml>=6.0.2",
 ]
 

@@ -83,7 +83,7 @@ The action relies on environment variables for LLM configuration, handled by [li
 To use this action in your GitHub workflow, add the following step:
 
 ```yaml
-- uses: drew2a/ai-review@v1
+- uses: drew2a/ai-review@v2
   env:
     LLM_MODEL: gpt-4o
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: drew2a/ai-review@v1
+      - uses: drew2a/ai-review@v2
         env:
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -228,7 +228,7 @@ author_customization: |
 ### Usage in Workflow
 
 ```yaml
-- uses: drew2a/ai-review@v1
+- uses: drew2a/ai-review@v2
   with:
     # ... other parameters ...
     author_customization: |

@@ -1,4 +1,5 @@
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -91,6 +92,8 @@ def parse_args():
     parser.add_argument('add_review_resolution', type=str, help='Add review resolution')
     parser.add_argument('add_joke', type=str, help='Add joke')
     parser.add_argument('author_customization', type=str, help='Author customization YAML')
+    parser.add_argument('exclude', type=str, nargs='?', default='',
+                        help='Glob patterns of files to leave out of the review')
 
     return parser.parse_args()
 
@@ -396,6 +399,16 @@ def publish_review(review_content, github_token, debug, llm_model, add_review_re
             print("Error submitting the PR review:", e)
 
 
+def parse_exclude_patterns(exclude: str) -> list[str]:
+    """ Split the `exclude` input into glob patterns; one per line or comma-separated."""
+    return [pattern.strip() for pattern in re.split(r'[,\n]', exclude or '') if pattern.strip()]
+
+
+def is_excluded(filename: str, patterns: list[str]) -> bool:
+    """ Whether a file matches any exclude pattern. `*` also matches `/`, as in fnmatch."""
+    return any(fnmatch.fnmatch(filename, pattern) for pattern in patterns)
+
+
 def help_llm(diff_file: File):
     """
     Creates a string for the LLM that contains:
@@ -467,9 +480,10 @@ if __name__ == "__main__":
     pr_author = pr.user.login if pr.user else ""
 
     diff = pr.get_files()
+    exclude_patterns = parse_exclude_patterns(args.exclude)
 
     diff_string = "\n".join(
-        help_llm(f) for f in diff if f.patch
+        help_llm(f) for f in diff if f.patch and not is_excluded(f.filename, exclude_patterns)
     )
     debug = args.debug.lower() == 'true'
 

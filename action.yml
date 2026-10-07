@@ -30,6 +30,11 @@ inputs:
     required: false
     default: ''
 
+  exclude:
+    description: 'Glob patterns of files to leave out of the review, one per line or comma-separated'
+    required: false
+    default: ''
+
 runs:
   using: 'docker'
   image: 'Dockerfile'
@@ -39,3 +44,4 @@ runs:
     - "${{ inputs.add_review_resolution }}"
     - "${{ inputs.add_joke }}"
     - "${{ inputs.author_customization }}"
+    - "${{ inputs.exclude }}"

@@ -20,9 +20,11 @@ from ai_review.review import (
     extract_json,
     get_author_specific_prompt_additions,
     help_llm,
+    is_excluded,
     is_previous_ai_review,
     parse_args,
     parse_author_customization,
+    parse_exclude_patterns,
     process_review,
     publish_review,
     resolve_pr_number,
@@ -161,6 +163,27 @@ def test_parse_args():
     assert args.add_review_resolution == 'false'
     assert args.add_joke == 'false'
     assert args.author_customization == 'custom'
+    assert args.exclude == ''
+
+
+def test_parse_args_with_exclude():
+    with patch('sys.argv', ['review.py', 'gh_token', 'false', 'false', 'false', '', 'docs/*.json']):
+        args = parse_args()
+    assert args.exclude == 'docs/*.json'
+
+
+def test_parse_exclude_patterns():
+    assert parse_exclude_patterns('') == []
+    assert parse_exclude_patterns(None) == []
+    assert parse_exclude_patterns('docs/*.json, *.lock\n\n  vendor/**  \n') == ['docs/*.json', '*.lock', 'vendor/**']
+
+
+def test_is_excluded():
+    patterns = ['docs/*openapi*.json', '*.lock']
+    assert is_excluded('docs/medicore-openapi.json', patterns)
+    assert is_excluded('backend/uv.lock', patterns)
+    assert not is_excluded('docs/readme.md', patterns)
+    assert not is_excluded('src/app.py', [])
 
 
 def test_dump_to_yaml_empty():
@@ -792,6 +815,43 @@ def test_main_block():
     context = render.call_args[1]
     assert 'Please rename this' in context['PR_COMMENTS']
     assert 'This can overflow' in context['REVIEW_COMMENTS']
+
+
+def test_main_block_leaves_excluded_files_out_of_the_diff():
+    mock_github_instance = Mock()
+    mock_repo = Mock()
+    mock_pr = Mock()
+    mock_pr.title = 'Test PR'
+    mock_pr.body = 'Test body'
+    mock_pr.user = Mock(login='testuser')
+    code_file = Mock(patch='@@ -1,2 +1,2 @@\n context\n+added', filename='src/app.py')
+    spec_file = Mock(patch='@@ -0,0 +1 @@\n+{"openapi": "3.0.0"}', filename='docs/vendor-openapi.json')
+    mock_pr.get_files.return_value = [code_file, spec_file]
+    mock_pr.get_issue_comments.return_value = []
+    mock_pr.get_review_comments.return_value = []
+    mock_github_instance.get_repo.return_value = mock_repo
+    mock_repo.get_pull.return_value = mock_pr
+
+    mock_response = Mock()
+    mock_response.choices = [Mock(message=Mock(content='Review content'))]
+    render = Mock(return_value='user prompt')
+
+    with patch('sys.argv', ['review.py', 'gh_token', 'false', 'false', 'false', '', 'docs/*openapi*.json']), \
+         patch.dict(os.environ, {
+             'GITHUB_REF': 'refs/pull/1/merge',
+             'GITHUB_EVENT_PATH': '',
+             'GITHUB_REPOSITORY': 'owner/repo',
+             'LLM_MODEL': 'gpt-4o',
+         }), \
+         patch('github.Github', return_value=mock_github_instance), \
+         patch('litellm.completion', return_value=mock_response), \
+         patch('pathlib.Path.read_text', return_value='system prompt'), \
+         patch.object(Environment, 'get_template', return_value=Mock(render=render)):
+        runpy.run_module('ai_review.review', run_name='__main__')
+
+    diff = render.call_args[1]['DIFF']
+    assert 'src/app.py' in diff
+    assert 'vendor-openapi.json' not in diff
 
 
 def _write_event(tmp_path, payload):

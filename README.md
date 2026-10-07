@@ -63,6 +63,7 @@ So, based on this **(highly unscientific) scale**:
 | `add_review_resolution` | Add review resolution (APPROVE, REQUEST_CHANGES, COMMENT) | false    | `false`              |
 | `add_joke`              | Add a joke to the review comment                          | false    | `true`               |
 | `author_customization`  | YAML configuration for customizing reviews based on PR author | false | -                    |
+| `exclude`               | Glob patterns of files to leave out of the review, one per line or comma-separated (e.g. `docs/*.json`) | false | - |
 
 ## Environment Variables
 

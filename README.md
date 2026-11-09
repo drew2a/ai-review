@@ -28,6 +28,7 @@ This action uses [LiteLLM](https://docs.litellm.ai/docs/providers), so it suppor
 - **Anthropic** (Claude 3.5 Sonnet, Claude 3.7 Sonnet, etc.)
 - **Google VertexAI / Gemini** (Gemini 1.5 Pro, Gemini 2.0 Flash, etc.)
 - **Azure OpenAI**
+- **OpenRouter**, including its free `:free` models
 - **HuggingFace**
 - **Ollama**
 - ... and many more.
@@ -74,6 +75,7 @@ The action relies on environment variables for LLM configuration, handled by [li
 | `OPENAI_API_KEY` | API Key for OpenAI (if using OpenAI models) | Conditional |
 | `ANTHROPIC_API_KEY` | API Key for Anthropic (if using Claude models) | Conditional |
 | `GEMINI_API_KEY` | API Key for Google Gemini (if using Gemini models) | Conditional |
+| `OPENROUTER_API_KEY` | API Key for OpenRouter (if using `openrouter/...` models) | Conditional |
 | `OPENAI_API_BASE` | Custom API endpoint (if needed) | Optional |
 
 *Note: Check the [LiteLLM documentation](https://docs.litellm.ai/docs/providers) for the specific environment variables required for your chosen provider.*

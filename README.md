@@ -33,6 +33,8 @@ This action uses [LiteLLM](https://docs.litellm.ai/docs/providers), so it suppor
 - **Ollama**
 - ... and many more.
 
+For a free setup, use one of OpenRouter's `:free` models that supports structured outputs.
+
 See the [LiteLLM Providers documentation](https://docs.litellm.ai/docs/providers) for the full list of supported models and the required environment variables for each provider.
 
 ### My (Subjective) Review of the Particular Models
